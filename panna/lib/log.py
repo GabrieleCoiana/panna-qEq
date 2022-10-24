@@ -7,14 +7,6 @@ import logging.config
 DEFAULT_LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
-    'filters': {
-        'require_debug_false': {
-            '()': 'lib.log.RequireDebugFalse',
-        },
-        'require_debug_true': {
-            '()': 'lib.log.RequireDebugTrue',
-        },
-    },
     'formatters': {
         'formatter_1': {
             '()': 'logging.Formatter',
@@ -24,41 +16,46 @@ DEFAULT_LOGGING = {
     },
     'handlers': {
         'console': {
-            'level': 'INFO',
-            'filters': ['require_debug_true'],
+            'level': 'DEBUG',
             'class': 'logging.StreamHandler',
+            'stream': 'ext://sys.stdout',
             'formatter': 'formatter_1'
         },
-        'logfile': {
-            'level': 'INFO',
+        'console_err': {
+            'level': 'ERROR',
             'class': 'logging.StreamHandler',
+            'stream': 'ext://sys.stderr',
             'formatter': 'formatter_1'
+        },
+        'tf_logfile': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': 'tf.log',
+            'maxBytes': 10 * 1024 * 1024,
+            'backupCount': 3
         },
     },
     'loggers': {
+        # set tensorflow logger, only errors in console
+        # all is piped in the logfile
+        'tensorflow': {
+            'handlers': ['console_err', 'tf_logfile'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        # main panna logger - why?!
         'panna': {
             'handlers': ['console'],
             'level': 'INFO',
             'propagate': False,
         },
-        'panna.lib': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'panna.tools': {
-            'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'panna.network': {
-            'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
+        # 'panna.neuralnet.logger_dummy': {
+        #     'handlers': ['console_err'],
+        #     'level': 'DEBUG',
+        #     'propagate': True,
+        # },
     }
 }
-
 
 splash_screen_record = logging.makeLogRecord({
     'level': logging.INFO,
@@ -81,43 +78,10 @@ def emit_splash_screen(logger):
     logger.handle(splash_screen_record)
 
 
-def _splash_screen(emitter):
-    # Splash screen
-    record = logging.makeLogRecord({
-        'level':
-        logging.INFO,
-        'levelname':
-        'INFO',
-        'msg':
-        '\n'
-        '    ____   _    _   _ _   _    _           \n'
-        '   |  _ \\ / \\  | \\ | | \\ | |  / \\     \n'
-        '   | |_) / _ \\ |  \\| |  \\| | / _ \\     \n'
-        '   |  __/ ___ \\| |\\  | |\\  |/ ___ \\    \n'
-        '   |_| /_/   \\_\\_| \\_|_| \\_/_/   \\_\\ \n'
-        '\n'
-        ' Properties from Artificial Neural Network Architectures'
-        '\n'
-    })
-    emitter(record)
-
-def init_logging():
+def init_logging(config_file=None):
     """Logger init, to be called in mains
     """
-    logging.config.dictConfig(DEFAULT_LOGGING)
-    main_logger = logging.getLogger('panna')
-
-    # creating a record is not very smart but comes in handy
-    # if you add handler to a logger in a second time and want to output
-    # it only on a given handler
-    for handler in main_logger.handlers:
-        _splash_screen(handler.emit)
-
-class RequireDebugFalse(logging.Filter):
-    def filter(self, record):
-        return False
-
-
-class RequireDebugTrue(logging.Filter):
-    def filter(self, record):
-        return True
+    if config_file:
+        raise ValueError('Not implemented')
+    else:
+        logging.config.dictConfig(DEFAULT_LOGGING)

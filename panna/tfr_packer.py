@@ -7,90 +7,83 @@
 ###########################################################################
 import argparse
 import configparser
+from functools import partial
 import logging
 import os
+import sys
 
 import numpy as np
 
 import gvector
-import neuralnet
 from lib import init_logging
+from lib.example_bin import load_example
 
 # logger
 logger = logging.getLogger('panna')
 
 
-def parser_file(conf_file):
-    """parser file
-
-    in_path: path to the directory to be compressed
-    out_path: path to the save directory
-    elements_per_file: number of element for each tfrecord file
-    n_atoms: simulation info: number of atoms in each file
-    num_species: simulation info: number of species
-    g_size: simulation info: size of g-vector
-    prefix: an extra prefix, optional, it is added in front of the file_name
-              eg: train for the training set
-
-    IMPORTANT:
-      In the in_path there must be ONLY files that are binary representation
-      of already calculated g-vector
-
+def recover_bin_files(in_path):
+    """ find bin file in a given path
     """
-    config = configparser.ConfigParser()
-    config.read(conf_file)
-
-    class Parameters():
-        pass
-
-    parameters = Parameters()
-
-    io_param = config['IO_INFORMATION']
-    parameters.in_path = io_param.get('input_dir', None)
-    parameters.out_path = io_param.get('output_dir', None)
-    parameters.elements_per_file = io_param.getint('elements_per_file', 1000)
-    parameters.prefix = io_param.get('prefix', '')
-
-    gv_param = config['CONTENT_INFORMATION']
-    parameters.num_species = gv_param.getint('n_species', None)
-    parameters.derivatives = gv_param.getboolean('include_derivatives', False)
-    parameters.sparse_derivatives = gv_param.getboolean(
-        'sparse_derivatives', False)
-    parameters.per_atom_quantity = gv_param.getboolean(
-        'include_per_atom_quantity', False)
-
-    return parameters
+    all_example_files = []
+    for file in os.listdir(in_path):
+        _name, ext = os.path.splitext(file)
+        if ext == '.bin':
+            file_name = os.path.join(in_path, file)
+            all_example_files.append(file_name)
+    return all_example_files
 
 
-def main(parameters):
-    """Package all the gvector in a folder to tfrecord files
+def packer_func(gv_param):
+    """ return the packer function with all parameters set
     """
+    derivatives = gv_param.getboolean('include_derivatives', False)
+    sparse_derivatives = gv_param.getboolean('sparse_derivatives', False)
+    per_atom_quantity = gv_param.getboolean('include_per_atom_quantity', False)
+    return partial(gvector.example_tf_packer,
+                   forces=derivatives,
+                   sparse_dgvect=sparse_derivatives,
+                   per_atom_quantity=per_atom_quantity)
 
-    all_example_names = []
-    for file in os.listdir(parameters.in_path):
-        name, ext = os.path.splitext(file)
-        if ext=='.bin':
-            all_example_names.append(file)
-    if len(all_example_names)==0:
-        logger.info('No example found. Stopping')
-        exit(1)
-    files = [
-        os.path.join(parameters.in_path, x)
-        for x in all_example_names
-    ]
-    n_files = int(np.ceil(len(files) / parameters.elements_per_file))
+
+def partition_files(files, partition_size):
+    """ partition the files in sub-lists of size partition_size
+    if element are not enough last list will be of different size
+    """
+    n_parts = int(np.ceil(len(files) / partition_size))
 
     # divided files in subsets, each set is a new tfr file
     files = [
-        files[i * parameters.elements_per_file:(i + 1) *
-              parameters.elements_per_file] for i in range(n_files)
+        files[i * partition_size:(i + 1) * partition_size]
+        for i in range(n_parts)
     ]
+    return files
 
-    if not os.path.exists(parameters.out_path):
-        os.makedirs(parameters.out_path)
 
-    if parameters.prefix != '':
-        file_pattern = parameters.prefix + '-{}-{}'
+def tfr_packer_writer(files, packer, out_path, prefix=None):
+    """ save the data in tfrs in the out_path
+
+    Parameters
+    ----------
+    files: list of list of path to bin files
+    packer: func
+        a packer function
+    out_path: path/stirng
+    prefix: string, optional
+         a prefix for the tfrs names
+
+    Returns
+    -------
+    None
+
+    Store len(files) tfrs files in out path.
+    The name of a tfrs is: prefix-{file number}-{of files}.tfrecord
+    """
+    if not os.path.exists(out_path):
+        os.makedirs(out_path)
+
+    if prefix:
+        file_pattern = prefix + '-{}-{}'
     else:
         file_pattern = '{}-{}'
 
@@ -100,33 +93,47 @@ def main(parameters):
         logger.info('file %d/%d', idx + 1, n_tfrs)
 
         filename = file_pattern.format(idx + 1, n_tfrs)
-        target_file = os.path.join(parameters.out_path,
-                                   '{}.tfrecord'.format(filename))
 
+        # check if file already exists
+        target_file = os.path.join(out_path, '{}.tfrecord'.format(filename))
         if os.path.isfile(target_file) and (os.path.getsize(target_file) > 0):
             logger.info('file already computed')
             continue
 
-        payload = [
-            gvector.example_tf_packer(neuralnet.load_example(x),
-                                      parameters.derivatives,
-                                      parameters.sparse_derivatives,
-                                      parameters.per_atom_quantity)
-            for x in tfr_elements
-        ]
-        gvector.tfr_writer(filename=filename,
-                       path=parameters.out_path,
-                       data=payload)
+        payload = [packer(load_example(x)) for x in tfr_elements]
+
+        gvector.tfr_writer(filename=filename, path=out_path, data=payload)
 
 
-if __name__ == '__main__':
-    init_logging()
-    PARSER = argparse.ArgumentParser(description='TFR packer')
-    PARSER.add_argument('-c',
+def main():
+    parser = argparse.ArgumentParser(description='TFR packer')
+    parser.add_argument('-c',
                         '--config',
                         type=str,
                         help='config file',
                         required=True)
-    ARGS = PARSER.parse_args()
-    PARAMETERS = parser_file(ARGS.config)
-    main(PARAMETERS)
+    args = parser.parse_args()
+    config = configparser.ConfigParser()
+    config.read(args.config)
+    init_logging()
+
+    io_param = config['IO_INFORMATION']
+    in_path = io_param.get('input_dir', None)
+    out_path = io_param.get('output_dir', None)
+    examples_files = recover_bin_files(in_path)
+    if len(examples_files) == 0:
+        logger.info('No example found. Stopping')
+        sys.exit(1)
+
+    partition_size = io_param.getint('elements_per_file', 1000)
+    examples_files = partition_files(examples_files, partition_size)
+
+    gv_param = config['CONTENT_INFORMATION']
+    example_tf_packer = packer_func(gv_param)
+    prefix = io_param.get('prefix', None)
+
+    tfr_packer_writer(examples_files, example_tf_packer, out_path, prefix)
+
+
+if __name__ == '__main__':
+    main()

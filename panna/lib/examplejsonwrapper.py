@@ -5,19 +5,19 @@
 # The code is hosted on GitLab at https://gitlab.com/PANNAdevs/panna      #
 # For further information on the license, see the LICENSE.txt file        #
 ###########################################################################
-import os
 import json
 import logging
+import os
 from string import Template
+import mendeleev
 
 import numpy as np
-from .units_converter import distances_to_angstrom
-from .units_converter import energy_to_ev
-from .lammps_tools import convert_lattice_to_lmp
-from .lammps_tools import convert_vectors_to_lmp
-from .atomic_property import recover_property
 
-logger = logging.getLogger('panna.lib')
+from lib.atomic_property import recover_property
+from lib.lammps_tools import convert_lattice_to_lmp, convert_vectors_to_lmp
+from lib.units_converter import distances_to_angstrom, energy_to_ev
+
+logger = logging.getLogger(__name__)
 
 
 class ExampleJsonWrapper():
@@ -55,8 +55,7 @@ class ExampleJsonWrapper():
         """unit of length in the example"""
         unit_of_length = self._example.get('unit_of_length', None)
         if unit_of_length is None:
-            logger.warning('unit_of_length unknown, assumed angstrom %s',
-                           self.key)
+            logger.warning(f'unit_of_length unknown, assumed angstrom {self.key}')
             unit_of_length = 'angstrom'
         return unit_of_length
 
@@ -66,7 +65,7 @@ class ExampleJsonWrapper():
         try:
             unit_of_energy = self._example.get('energy', [])[1]
         except IndexError:
-            logger.warning('unit of energy unknown, assumed eV %s', self.key)
+            logger.warning(f'unit of energy unknown, assumed eV {self.key}')
             unit_of_energy = 'eV'
         return unit_of_energy
 
@@ -93,14 +92,15 @@ class ExampleJsonWrapper():
             [xy, yhi - ylo, 0],
             [xz, yz, zhi - zlo]]
         """
-        return convert_lattice_to_lmp(self.lattice_vectors)
+        return convert_lattice_to_lmp(self.angstrom_lattice_vectors)
 
     @property
     def lmp_atomic_positions(self):
         """return atomic positions rotated/translated as required by lammps
            in unit of length
         """
-        return convert_vectors_to_lmp(self.lattice_vectors, self.positions)
+        return convert_vectors_to_lmp(self.angstrom_lattice_vectors,
+                                      self.angstrom_positions)
 
     @property
     def atomic_position_unit(self):
@@ -108,8 +108,7 @@ class ExampleJsonWrapper():
         atomic_position_unit = self._example.get('atomic_position_unit', None)
         if atomic_position_unit is None:
             # legacy key in dictionary
-            atomic_position_unit = self._example.get('atomic_coordinates',
-                                                     None)
+            atomic_position_unit = self._example.get('atomic_coordinates', None)
         return atomic_position_unit
 
     @property
@@ -123,9 +122,8 @@ class ExampleJsonWrapper():
 
             elif self.atomic_position_unit == 'crystal':
                 pos.append(
-                    np.dot(
-                        np.transpose(self.lattice_vectors),
-                        np.asarray(atom[2]).astype(np.float)))
+                    np.dot(np.transpose(self.lattice_vectors),
+                           np.asarray(atom[2]).astype(np.float)))
             else:
                 raise ValueError('atomic_position_unit unknown')
         return np.asarray(pos)
@@ -133,8 +131,7 @@ class ExampleJsonWrapper():
     @property
     def angstrom_positions(self):
         """return atomic positions in angstrom"""
-        return np.multiply(self.positions,
-                           distances_to_angstrom(self.unit_of_length))
+        return np.multiply(self.positions, distances_to_angstrom(self.unit_of_length))
 
     @property
     def forces(self):
@@ -144,8 +141,7 @@ class ExampleJsonWrapper():
         for atom in self._example['atoms']:
             try:
                 force = np.asarray(atom[3]).astype(np.float) * energy_to_ev(
-                    self.unit_of_energy) / distances_to_angstrom(
-                        self.unit_of_length)
+                    self.unit_of_energy) / distances_to_angstrom(self.unit_of_length)
                 forces.append(force)
             except IndexError:
                 raise ValueError('forces were requested but are not available')
@@ -157,7 +153,10 @@ class ExampleJsonWrapper():
         """
         idxes = []
         for atom in self._example['atoms']:
-            idxes.append(self.species_str_2idx[atom[1]])
+            try:
+                idxes.append(self.species_str_2idx[atom[1]])
+            except KeyError:
+                raise KeyError(f'Species {atom[1]} Not found')
         return np.asarray(idxes)
 
     @property
@@ -190,26 +189,6 @@ class ExampleJsonWrapper():
         return np.asarray(pa_energy, dtype=np.float)
 
     @property
-    def per_atom_charges(self):
-        """ recover the per atom charge
-        """
-        raise NotImplementedError()
-        charges = []
-        static_charge = {}  # is this correct?
-        for specie in self.species:
-            static_charge[specie] = recover_property(specie, 'charge')
-
-        for atom in self._example['atoms']:
-            if len(atom) > 4:
-                if static_charge[atom[1]] > 0:
-                    charges.append(static_charge[atom[1]] - atom[4])
-                else:
-                    charges.append(atom[4])
-            else:
-                raise ValueError('Charges not found')
-        return np.asarray(charges, dtype=np.float)
-
-    @property
     def ev_energy(self):
         """ return the energy in eV"""
         return self.energy * energy_to_ev(self.unit_of_energy)
@@ -224,7 +203,7 @@ class ExampleJsonWrapper():
     @property
     def key(self):
         """ a unique key, for now simple file name"""
-        return os.path.basename(self._file).split('.')[0]
+        return os.path.basename(self._file).split('.example')[0]
 
     @property
     def number_of_atoms(self):
@@ -242,15 +221,20 @@ class ExampleJsonWrapper():
     @property
     def species_str_2idx(self):
         """converter form string to idx"""
-        return {
-            species: idx
-            for idx, species in enumerate(self._atomic_sequence)
-        }
+        return {species: idx for idx, species in enumerate(self._atomic_sequence)}
 
     @property
     def number_of_species(self):
         """number of species"""
         return len(self.species)
+    @property
+    def atomic_number(self):
+        ''' return atomic number of atomc in the simulation box'''
+        at_num = []
+        for atom in self._example['atoms']:
+            at_num.append(mendeleev.element(atom[1]).atomic_number)
+        return np.asarray(at_num)
+
 
     def to_lammps(self):
         """return a string ready to be written as pos lammps file,
@@ -301,8 +285,7 @@ class ExampleJsonWrapper():
 
         string += 'Masses\n\n'
         for idx, specie in enumerate(self.species):
-            string += '{} {}\n'.format(idx + 1, recover_property(
-                specie, 'mass'))
+            string += '{} {}\n'.format(idx + 1, recover_property(specie, 'mass'))
         string += '\nAtoms\n\n'
 
         for idx, (atomic_species, atomic_position) in enumerate(
@@ -337,28 +320,27 @@ class ExampleJsonWrapper():
         qe_dict['CELL_PARAMETERS'] = Template(tmp)
 
         tmp = 'ATOMIC_SPECIES\n' + \
-            '\n'.join([' {0} {1} ${0}_pseudo'.format(
-                specie, recover_property(specie, 'mass')) for specie in self.species])
+            '\n'.join(
+                [f" {specie} {recover_property(specie, 'mass')} ${specie}_pseudo"
+                 for specie in self.species]
+            )
         qe_dict['ATOMIC_SPECIES'] = Template(tmp)
 
         tmp = 'ATOMIC_POSITIONS {}\n'.format(self.unit_of_length) + \
-            '\n'.join(
-                [
-                    '{} {} {} {}'.format(self.species[specie], *pos) for
-                    specie, pos in zip(self.species_indexes, self.positions)
-                ]
-            )
+            '\n'.join(['{} {} {} {}'.format(self.species[specie], *pos) for
+                       specie, pos in zip(self.species_indexes, self.positions)]
+                      )
         qe_dict['ATOMIC_POSITIONS'] = Template(tmp)
 
         if kpoints_density and kpoints_grid:
             raise ValueError(
-                'kpoints_density and kpoints_grid can not be provided together'
-            )
+                'kpoints_density and kpoints_grid can not be provided together')
 
         if kpoints_density:
             tmp = 'K_POINTS automatic\n {} 1 1 1'
-            n_kpoints = np.round(kpoints_density / np.linalg.norm(
-                self.angstrom_lattice_vectors, axis=1)).astype(np.int)
+            n_kpoints = np.round(
+                kpoints_density
+                / np.linalg.norm(self.angstrom_lattice_vectors, axis=1)).astype(np.int)
             tmp = tmp.format(' '.join(n_kpoints.astype(str)))
             qe_dict['K_POINTS'] = Template(tmp)
         elif kpoints_grid:

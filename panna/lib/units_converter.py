@@ -9,6 +9,7 @@
 """
 
 import logging
+
 import numpy as np
 
 # Conversion constants
@@ -16,7 +17,7 @@ BOHR_2_A = np.float32(0.52917721067)
 RY_2_EV = np.float32(13.6056980659)
 
 # logger
-logger = logging.getLogger('panna.lib')
+logger = logging.getLogger(__name__)
 
 
 def energy_to_ev(energy_units):
@@ -55,9 +56,9 @@ def distances_to_angstrom(distance_units):
     float: factor to perform conversions
     """
 
-    if distance_units == 'bohr':
+    if distance_units in ['au', 'bohr', 'bohr_radius', 'BOHR']:
         unit_to_angstrom = np.float32(1) * BOHR_2_A
-    elif distance_units == 'angstrom':
+    elif distance_units in ['a', 'angstrom', 'A', 'Angstrom', 'ANGSTROM']:
         unit_to_angstrom = np.float32(1)
     else:
         raise ValueError('distance units unrecognized')

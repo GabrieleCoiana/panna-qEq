@@ -60,6 +60,27 @@ DEFAULT_LOGGING = {
 }
 
 
+splash_screen_record = logging.makeLogRecord({
+    'level': logging.INFO,
+    'levelno': 20,
+    'levelname': 'INFO',
+    'msg':
+    '\n'
+    '    ____   _    _   _ _   _    _           \n'
+    '   |  _ \\ / \\  | \\ | | \\ | |  / \\     \n'
+    '   | |_) / _ \\ |  \\| |  \\| | / _ \\     \n'
+    '   |  __/ ___ \\| |\\  | |\\  |/ ___ \\    \n'
+    '   |_| /_/   \\_\\_| \\_|_| \\_/_/   \\_\\ \n'
+    '\n'
+    ' Properties from Artificial Neural Network Architectures'
+    '\n'
+})
+
+
+def emit_splash_screen(logger):
+    logger.handle(splash_screen_record)
+
+
 def _splash_screen(emitter):
     # Splash screen
     record = logging.makeLogRecord({

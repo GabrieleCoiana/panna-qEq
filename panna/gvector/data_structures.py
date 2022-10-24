@@ -22,28 +22,43 @@ def _floats_feature(value):
     return tf.train.Feature(float_list=tf.train.FloatList(value=value))
 
 
-def writer(filename, data, path='.'):
+def tfr_writer(filename, data, path='.'):
     """ Tfrecord writer
+
+    Parameters
+    ----------
+    filename: string
+    data: iterable of Tensorflow examples
+    path: string
     """
-    with tf.python_io.TFRecordWriter(
+    with tf.io.TFRecordWriter(
             os.path.join(path, '{}.tfrecord'.format(filename)))\
             as record_writer:
         for entry in data:
             record_writer.write(entry.SerializeToString())
 
 
-def example_tf_packer(example, forces=False, sparse_dgvect=False,
+def example_tf_packer(example,
+                      forces=False,
+                      sparse_dgvect=False,
                       per_atom_quantity=False):
     """Create an example with only the g-vectors without padding
 
     Parameters
     ----------
-       example: instance of Example
-       forces: flag to add derivative and forces
-       per_atom_quantity: flag to a per atom quantity
+    example: instance of Example
+    forces: Boolean, optional
+        flag to add derivative and forces
+        default False
+    sparse_dgvect: Boolean, optional
+        flag to save sparse derivatives
+        default False
+    per_atom_quantity: Boolean
+        flag to store a per atom quantity
+        default False
 
-    Return
-    ------
+    Returns
+    -------
        tf.train.Example with the following keys:
          + gvects: (number of atoms * g-vector size) vector of float
          + species: (number of atoms) vector of integer
@@ -66,13 +81,18 @@ def example_tf_packer(example, forces=False, sparse_dgvect=False,
         if not sparse_dgvect:
             feature['dgvects'] = _floats_feature(example.dgvects.flatten())
         else:
-            feature['dgvect_size'] = _int64_feature([len(example.dgvect_values.flatten())])
-            feature['dgvect_values'] = _floats_feature(example.dgvect_values.flatten())
-            feature['dgvect_indices1'] = _floats_feature(example.dgvect_indices1.flatten())
-            feature['dgvect_indices2'] = _floats_feature(example.dgvect_indices2.flatten())
+            feature['dgvect_size'] = _int64_feature(
+                [len(example.dgvect_values.flatten())])
+            feature['dgvect_values'] = _floats_feature(
+                example.dgvect_values.flatten())
+            feature['dgvect_indices1'] = _floats_feature(
+                example.dgvect_indices1.flatten())
+            feature['dgvect_indices2'] = _floats_feature(
+                example.dgvect_indices2.flatten())
         feature['forces'] = _floats_feature(example.forces.flatten())
 
     if per_atom_quantity:
-        feature['per_atom_quantity'] = _floats_feature(example.per_atom_quantity)
+        feature['per_atom_quantity'] = _floats_feature(
+            example.per_atom_quantity)
 
     return tf.train.Example(features=tf.train.Features(feature=feature))

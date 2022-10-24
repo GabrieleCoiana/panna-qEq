@@ -16,11 +16,19 @@ import configparser
 from tensorflow.errors import NotFoundError
 
 import neuralnet as net
+from panna.gvect_calculator import extract_gvect_func
 from lib import init_logging
-from gvect_calculator import parse_file as parse_gvect_input
+from lib.parser_callable import converters
 
 # logger
 logger = logging.getLogger('panna')  # pylint: disable=invalid-name
+
+
+def recover_gvect(gvect_config):
+    config = configparser.ConfigParser(converters=converters)
+    config.read(gvect_config)
+    gvect_func = extract_gvect_func(config)
+    return gvect_func
 
 
 def main(conf_file):
@@ -41,7 +49,7 @@ def main(conf_file):
     json_file = os.path.join(in_dir, 'networks_metadata.json')
 
     if gvector_input:
-        gvect_func, *_dummy = parse_gvect_input(gvector_input)
+        gvect_func = recover_gvect(gvector_input)
         extra_data['gvect_params'] = gvect_func.gvect
     else:
         logger.info('missing gvect_params input file')

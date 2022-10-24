@@ -18,6 +18,12 @@ def get_list_floats_from_comma_sep_strings(value):
     return [float(x) for x in value.split(',')]
 
 
+def get_list_integers_from_comma_sep_strings(value):
+    """ get a list out of comma separated value
+    """
+    return [int(float(x)) for x in value.split(',')]
+
+
 def get_network_architecture(value):
     """ parse the architecture format
 
@@ -98,6 +104,7 @@ def get_network_behavior(value):
 converters = {
     '_comma_list': get_list_from_comma_sep_strings,
     '_comma_list_floats': get_list_floats_from_comma_sep_strings,
+    '_comma_list_integers': get_list_integers_from_comma_sep_strings,
     '_network_architecture': get_network_architecture,
     '_network_trainable': get_network_trainable,
     '_network_act': get_network_act,

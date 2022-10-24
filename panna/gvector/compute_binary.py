@@ -15,12 +15,15 @@ def compute_binary(example_dict, binary_out=None):
 
     Parameters
     ----------
-        example_dict: dictionary for a simulation
-        binary_out: where to save, if None save is not performed
+    example_dict: dictionary
+        dictionary for a simulation
 
-    Return
-    ------
-        binary data
+    binary_out: string, optional
+        where to save, if None save is not performed
+
+    Returns
+    -------
+    binary data
     """
     int_format = {'length': 4, 'byteorder': 'little', 'signed': False}
 

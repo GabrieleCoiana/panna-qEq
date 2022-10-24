@@ -114,7 +114,7 @@ def main(parameters):
                                       parameters.per_atom_quantity)
             for x in tfr_elements
         ]
-        gvector.writer(filename=filename,
+        gvector.tfr_writer(filename=filename,
                        path=parameters.out_path,
                        data=payload)
 

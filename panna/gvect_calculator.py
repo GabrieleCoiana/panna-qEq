@@ -41,8 +41,9 @@ def _symmetry_function(symmetry_function: configparser.ConfigParser,
     symmetry_function : config.ConfigParser
         'SYMMETRY_FUNCTION' section of the configparser
     pbc_directions: list of 3 Boolean values
-        pbc in x, y, z directions. This directive override any other option,
-        if left blank pbc are infer from example files
+        pbc in first, second, third lattice vector directions (often, this will be  x, y, z). 
+        This directive override any other option,
+        if left blank pbc are inferred from example files
 
     Returns
     -------
@@ -60,6 +61,7 @@ def _symmetry_function(symmetry_function: configparser.ConfigParser,
 
     g_type = symmetry_function.get('type')
 
+    # New g vector types should be added below:
     if g_type == 'mBP':
         gvect_func = gvector.GvectmBP(compute_dgvect=compute_dgvect,
                                       species=species,
@@ -79,7 +81,9 @@ def _symmetry_function(symmetry_function: configparser.ConfigParser,
 
 
 def extract_gvect_func(config):
-    """ Find the gvector function in the configuration file
+    """ Find the gvector function in the configuration file,
+    we need to know the PBC as well because it changes how the 
+    gvector functions are called.
 
     Parameters
     ----------
@@ -95,15 +99,22 @@ def extract_gvect_func(config):
 
     # PBC related prameters
     if config.has_section('PBC'):
-        logger.warning('PBC will be assumed, json must be consistent '
+        logger.warning('PBC will be read from configuration file, json must be consistent '
                        'otherwise the code will fail')
-        pbc_directions = np.asarray(
-            [config['PBC'].getboolean('pbc{}'.format(x), False) for x in range(1, 4)])
+        if config.has_option('PBC','use_pbc'):              
+            pbc_directions = np.asarray(
+                config['PBC'].get_comma_list_booleans('use_pbc'))
+        else:
+            # for back compatibility only, don't carry to newer versions of the code:
+            pbc_directions = np.asarray(
+                [config['PBC'].getboolean('pbc{}'.format(x), False) for x in range(1, 4)])
     else:
         pbc_directions = None
-        logger.info('PBC will be determined by json file each time')
+        logger.info('PBC will be determined by lattice parameters in the json file for each example')
 
     gvect_func = _symmetry_function(config['SYMMETRY_FUNCTION'], pbc_directions)
+
+    # Every gvect type may have different param set, needs its own parser to parse the config
     gvect_func.parse_parameters(config['GVECT_PARAMETERS'])
 
     logger.info('g type: %s', gvect_func.name)
@@ -178,12 +189,14 @@ def compute(config, gvect_func, *, cli_folder_info=None):
     if not os.path.exists(binary_out_dir):
         os.makedirs(binary_out_dir)
 
-    # miscellaneous parameters
+    # miscellaneous parameters. if you add a new experimental parameter, add it here:
     if 'MISC' in config:
         misc = config['MISC']
         per_atom_energy = misc.getboolean('per_atom_energy', False)
     else:
         per_atom_energy = False
+
+    # Gvectors will be calculated only for files that end with .example extension 
     all_example_keys = []
     for file in os.listdir(input_json_dir):
         name, ext = os.path.splitext(file)
@@ -252,22 +265,23 @@ def compute(config, gvect_func, *, cli_folder_info=None):
         for example_dict in parallel_batch:
             feed.append((example_dict['key'], example_dict['positions'],
                          example_dict['species'], example_dict['lattice_vectors']))
-
+        # the actual computation is done here - time this:
         feed = pool.starmap(gvect_func, feed)
+
         # reorganize the results
         for example_dict in parallel_batch:
             for idx, element in enumerate(feed):
                 if example_dict['key'] == element['key']:
                     example_dict.update(element)
                     logger.debug('assigned')
+                    
         # SAVE computed result
-
         logger.debug('save gvectors')
         feed = []
         for example_dict in parallel_batch:
             feed.append((example_dict, binary_out_dir))
 
-        pool.starmap(gvector.compute_binary, feed)
+        pool.starmap(gvector.binary_encoder, feed)
 
         # final log for recovery
         log_for_recover.write(','.join(
@@ -299,11 +313,14 @@ def main():
     else:
         logger.setLevel(logging.INFO)
 
+    # parse gvector input file
     config = _parse_file(args.config)
 
-    # gvect parameters
+    # extract which gvector type and therefore compute function to use
+    # this function also sets all the config parameters needed for that gvect type
     gvect_func = extract_gvect_func(config)
 
+    # compute gvector
     compute(config, gvect_func, cli_folder_info=args.folder_info)
 
 

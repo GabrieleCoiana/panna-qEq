@@ -18,7 +18,7 @@ from itertools import repeat
 
 import numpy as np
 
-from gvector.write_routine import compute_binary
+from gvector.write_routine import binary_encoder
 from lib import init_logging
 from neuralnet.example import Example
 from neuralnet.example import load_example
@@ -107,7 +107,7 @@ def _from_no_to_v0(in_file, out_path, **kwargs):
     if derivatives:
         example_dict['dGvect'] = example.dgvects
         example_dict['forces'] = example.forces
-    compute_binary(example_dict, out_path)
+    binary_encoder(example_dict, out_path)
 
 
 def _remove_already_converted_files(in_file, out_file):
@@ -152,7 +152,7 @@ def _from_no_to_v0_sparse(in_file, out_path, **kwargs):
     dgdx_indices = np.vstack([idx_1, idx_2]).T
     example_dict['dGvect_val'] = values
     example_dict['dGvect_ind'] = dgdx_indices
-    compute_binary(example_dict, out_path)
+    binary_encoder(example_dict, out_path)
 
 
 def _from_v0_to_v0_sparse(in_file, out_path, **kwargs):
@@ -181,7 +181,7 @@ def _from_v0_to_v0_sparse(in_file, out_path, **kwargs):
     dgdx_indices = np.vstack([idx_1, idx_2]).T
     example_dict['dGvect_val'] = values
     example_dict['dGvect_ind'] = dgdx_indices
-    compute_binary(example_dict, out_path)
+    binary_encoder(example_dict, out_path)
 
 
 def starmap_with_kwargs(pool, fn, args_iter, kwargs):

@@ -9,11 +9,10 @@
 Gvector calculation and packer module
 """
 
-from gvector.compute_binary import compute_binary
-from gvector.data_structures import example_tf_packer, tfr_writer
-from gvector.gvectbp import GvectBP
-from gvector.gvectmbp import GvectmBP
+from gvector.binary_encoder import binary_encoder
+from gvector.gvect_bp import GvectBP
+from gvector.gvect_mbp import GvectmBP
 
 __all__ = [
-    'compute_binary', 'example_tf_packer', 'tfr_writer', 'GvectmBP', 'GvectBP'
+    'binary_encoder', 'GvectmBP', 'GvectBP'
 ]

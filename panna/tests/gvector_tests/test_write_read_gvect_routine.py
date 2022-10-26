@@ -10,7 +10,7 @@ import os
 import shutil
 import numpy as np
 
-from gvector.write_routine import compute_binary
+from gvector.write_routine import binary_encoder
 from neuralnet.example import load_example
 from tests.utils import ROOT_FOLDER
 
@@ -44,7 +44,7 @@ class TestIOBinary(unittest.TestCase):
             'Gvect': np.arange(50).reshape(5, 10),
             'E': 100
         }
-        compute_binary(example_dict, '.')
+        binary_encoder(example_dict, '.')
         example = load_example(example_dict['key'] + '.bin')
         np.testing.assert_equal(example_dict['E'], example.true_energy)
         np.testing.assert_array_equal(example_dict['species'],
@@ -79,7 +79,7 @@ class TestIOBinary(unittest.TestCase):
             'forces': np.arange(15).reshape(5, 3),
             'E': 100
         }
-        compute_binary(example_dict, '.')
+        binary_encoder(example_dict, '.')
         example = load_example(example_dict['key'] + '.bin')
         np.testing.assert_equal(example_dict['E'], example.true_energy)
         np.testing.assert_array_equal(example_dict['species'],
@@ -113,7 +113,7 @@ class TestIOBinary(unittest.TestCase):
             'per_atom_quantity': np.arange(5),
             'E': 100
         }
-        compute_binary(example_dict, '.')
+        binary_encoder(example_dict, '.')
         example = load_example(example_dict['key'] + '.bin')
         np.testing.assert_equal(example_dict['E'], example.true_energy)
         np.testing.assert_array_equal(example_dict['species'],
@@ -147,7 +147,7 @@ class TestIOBinary(unittest.TestCase):
             'per_atom_quantity': np.arange(5),
             'E': 100
         }
-        compute_binary(example_dict, '.')
+        binary_encoder(example_dict, '.')
         example = load_example(example_dict['key'] + '.bin')
         np.testing.assert_equal(example_dict['E'], example.true_energy)
         np.testing.assert_array_equal(example_dict['species'],

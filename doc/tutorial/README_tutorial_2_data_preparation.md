@@ -149,7 +149,9 @@ according to your needs.
 * `zeta` -- Value of ζ for the angular function (single value in case of mBP descriptor, comma separated list in the case of BP)
 
 ##### [PBC]
-* `pbc` -- [*optional*] boolean array determining whether boundary conditions are periodic in three dimensions. If not present boundary conditions will be inferred from the input files.
+* `use_pbc` -- [*optional*] comma separated list of booleans determining whether boundary conditions are periodic in three dimensions, e.g. use_pbc = True, True, False  
+If not present boundary conditions will be inferred from the input files.
+No default exists, all three dimensions should be set.
 
 To compute the gvector binaries, run the code `gvect_calculator.py` passing the input file as below:
 

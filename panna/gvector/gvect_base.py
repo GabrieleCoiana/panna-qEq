@@ -22,13 +22,7 @@ def requires_parameters(method):
         for parameter in self._gvect_parameters:  # pylint: disable=protected-access
             if self.__getattr__(parameter) is None:
                 raise ValueError(f'Parameter {parameter} is not set')
-            if not self.units:
-                raise ValueError(
-                    f'Internal units have not been specified'
-                    'you might need to fix {self.__class__.__name__}.units'
-                    '= Angstrom')
         return method(self, *args, **kwargs)
-
     return check_parameters
 
 
@@ -47,11 +41,11 @@ class GvectBase(ABC):
         (the default value is False)
     pbc_directions: list of Boolean, optional
         pbc directions to override those in the json
+        (the default value is None)
 
     Notes
     -----
-      units must be setted before usage!
-    TODO we might considered units to default at angstrom.
+    self.units default is set to Angstrom 
 
     _gvect_parameters emulate properties
     """
@@ -69,7 +63,7 @@ class GvectBase(ABC):
         self.sparse_dgvect = sparse_dgvect
         self.species = species
         self.pbc_directions = pbc_directions
-        self.units = None
+        self.units = 'angstrom'
         self._my_parameters = {}
 
     @property
@@ -121,7 +115,7 @@ class GvectBase(ABC):
             data = json.load(fs)
         gv_params = data.get('gvect_params', None)
         if not gv_params:
-            raise ValueError('dump does not contain information' 'about the g')
+            raise ValueError('dump does not contain information about the g vector params')
         self.units = 'angstrom'
         for key, value in gv_params.items():
             try:
@@ -133,13 +127,13 @@ class GvectBase(ABC):
         """ update all the internal parameters and apply the setter
         """
         if parameter not in self._gvect_parameters.keys():
-            raise ValueError(f'parameter {parameter} can not be set')
+            raise ValueError(f'parameter {parameter} cannot be set')
         self._my_parameters[parameter] = self._gvect_parameters[parameter](
             self, np.array(value))
 
     def __getattr__(self, name):
         if name.startswith('__'):
-            # this is very tricky
+            # No attribute should start with __ because it creates an infinite recursive copy 
             # stackoverflow.com/questions/47299243/recursionerror-when-python-copy-deepcopy
             raise AttributeError()
         if name in self._my_parameters:

@@ -11,8 +11,8 @@ import logging
 
 import numpy as np
 
-from gvector.feature_functions import G_angular_BP, G_radial
-from gvector.gvectbase import GvectBase, requires_parameters
+from gvector.helper_functions import G_angular_BP, G_radial
+from gvector.gvect_base import GvectBase, requires_parameters
 from gvector.pbc import replicas_max_idx
 
 logger = logging.getLogger(__name__)

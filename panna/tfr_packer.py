@@ -15,6 +15,7 @@ import sys
 import numpy as np
 
 import gvector
+from lib.tfr_data_structure import tfr_writer, example_tf_packer 
 from lib import init_logging
 from lib.example_bin import load_example
 
@@ -40,7 +41,7 @@ def packer_func(gv_param):
     derivatives = gv_param.getboolean('include_derivatives', False)
     sparse_derivatives = gv_param.getboolean('sparse_derivatives', False)
     per_atom_quantity = gv_param.getboolean('include_per_atom_quantity', False)
-    return partial(gvector.example_tf_packer,
+    return partial(example_tf_packer,
                    forces=derivatives,
                    sparse_dgvect=sparse_derivatives,
                    per_atom_quantity=per_atom_quantity)
@@ -102,7 +103,7 @@ def tfr_packer_writer(files, packer, out_path, prefix=None):
 
         payload = [packer(load_example(x)) for x in tfr_elements]
 
-        gvector.tfr_writer(filename=filename, path=out_path, data=payload)
+        tfr_writer(filename=filename, path=out_path, data=payload)
 
 
 def main():
@@ -129,10 +130,10 @@ def main():
     examples_files = partition_files(examples_files, partition_size)
 
     gv_param = config['CONTENT_INFORMATION']
-    example_tf_packer = packer_func(gv_param)
+    my_example_tf_packer = packer_func(gv_param)
     prefix = io_param.get('prefix', None)
 
-    tfr_packer_writer(examples_files, example_tf_packer, out_path, prefix)
+    tfr_packer_writer(examples_files, my_example_tf_packer, out_path, prefix)
 
 
 if __name__ == '__main__':

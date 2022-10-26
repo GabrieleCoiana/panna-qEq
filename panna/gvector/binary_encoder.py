@@ -10,13 +10,14 @@ from os.path import join
 import numpy as np
 
 
-def compute_binary(example_dict, binary_out=None):
-    """Transform a example_dict to a binary output
+def binary_encoder(example_dict, binary_out=None):
+    """Transform an example_dict, which is an example simulation with gvector, 
+    to a binary output.
 
     Parameters
     ----------
     example_dict: dictionary
-        dictionary for a simulation
+        dictionary for a simulation with the gvector
 
     binary_out: string, optional
         where to save, if None save is not performed

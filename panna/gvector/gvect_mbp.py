@@ -11,8 +11,8 @@ import logging
 
 import numpy as np
 
-from gvector.feature_functions import G_angular_mBP, G_radial, GdG_angular_mBP, GdG_radial
-from gvector.gvectbase import GvectBase, requires_parameters
+from gvector.helper_functions import G_angular_mBP, G_radial, GdG_angular_mBP, GdG_radial
+from gvector.gvect_base import GvectBase, requires_parameters
 from gvector.pbc import replicas_max_idx
 
 # logger
@@ -35,7 +35,13 @@ class GvectmBP(GvectBase):
     -----
       gvectmbp.units must be setted before usage!
       for a list of parameters that must be set:
-      gvectmbp.descriptor_parameters.
+      gvectmbp.descriptor_parameters. 
+      If you are adding a new parameter you need to add it in the following functions too:
+      _gvector_parameters dictionary
+      parse_parameters func
+      gvect func
+      __call__ func
+
     """
 
     name = 'mBP'
@@ -218,14 +224,6 @@ class GvectmBP(GvectBase):
             lattice_vectors: list [a1, a2, a3]
 
             For all the other parameters refer to the article
-        kwargs:
-            pbc: Normally pbc are recovered from file,
-                 if in the lattice_vectors a direction is set to zero
-                 then no pbc is applied in that direction.
-                 This argument allow you to turn off specific directions
-                 by passing an array of 3 logical value (one for each
-                 direction). False value turn off that specific direction
-                 eg. pbc = [True, False, True] => pbc along a1 and a3
 
         Return:
             dict, class has two flags: compute_dgvect, sparse_dgvect
@@ -246,11 +244,10 @@ class GvectmBP(GvectBase):
 
         note:
             All kind of PBC : 1D, 2D and 3D are implemented..
-            Check the function "replicas_max_idx" below
+            Check the function "replicas_max_idx" 
 
         """
         output = {'key': key}
-        # TODO fix this mess in the output
 
         # define shorter names:
         # and make sure arrays are arrays
@@ -279,20 +276,16 @@ class GvectmBP(GvectBase):
         dGs_dense = np.zeros((n_atoms, self.gsize, n_atoms, 3))
 
         # wrap the atoms in the unit cell
-        if (lattice_vectors == 0).all():
-            # HACK pbc should be treated better overall
-            # logger.warning('no PBC')
-            pass
-        else:
+        if (lattice_vectors != 0).any():
             crystal_coord = positions @ np.linalg.inv(lattice_vectors)
             crystal_coord = crystal_coord % 1.0
             positions = crystal_coord @ lattice_vectors
 
         # compute how many cell replica we need in each direction
-        if 'pbc' in kwargs:
+        if self.pbc_directions is not None:
             max_indices = replicas_max_idx(lattice_vectors,
                                            max(Rc_rad, Rc_ang),
-                                           pbc=kwargs['pbc'])
+                                           pbc=self.pbc_directions)
         else:
             max_indices = replicas_max_idx(lattice_vectors, max(Rc_rad, Rc_ang))
         l_max, m_max, n_max = max_indices

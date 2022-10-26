@@ -1,0 +1,21 @@
+[GVECT_PARAMETERS]
+Nspecies = 1
+species = C
+eta_rad = 16.0
+Rc_rad = 4.6
+Rs0_rad = 0.5
+RsN_rad = 32
+Rsst_rad = 0.128125
+eta_ang = 10.0
+Rc_ang = 4.0
+Rs0_ang = 0.5
+RsN_ang = 14
+Rsst_ang = 0.25
+zeta = 23.0
+ThetasN = 8
+
+[C]
+Nlayers = 3
+sizes = 64,32,1
+file = weights_C.dat
+activations = 1,1,0

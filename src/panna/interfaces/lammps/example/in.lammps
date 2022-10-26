@@ -1,0 +1,25 @@
+log             log.lammps
+units           metal
+atom_style      atomic
+atom_modify     map array
+boundary p p p
+
+read_data       p.mol
+
+velocity    all create 300 93053
+
+# interactions
+pair_style panna
+pair_coeff * * network panna.in
+
+# code to test the system in regular lammps
+fix 1 all nve
+
+timestep 3.81e-4
+
+dump dump0 all custom 1 pf.atom  id type x y z fx fy fz
+dump_modify dump0 append yes
+
+thermo 1
+thermo_style custom step temp pe etotal press vol
+run 50

@@ -84,7 +84,7 @@ For tutorial purposes the parameters in `train1.ini` are for a reasonably short 
 To run the code you should `train.py` with your version of python3 and  passing the input file as a `config` argument, e.g.:
 
 ```
-python3 ../../panna/train.py --config input_files/train1.ini
+python3 ../../src/panna/train.py --config input_files/train1.ini
 ```
 
 The run should take from a few seconds to a few minutes, depending on your machine.
@@ -121,7 +121,7 @@ For example, for each layer you can see the weights and biases in the network an
 Networks tend to start learning from the layers closest to the output. 
 You can observe this behavior in this very short training session by noticing that the weights and biases of the layers close to output 
 are more structured and differentiated while the weights and biases close to input layer resembles very closely to the initial values.
-
+https://trello.com/c/Kbun61hR/23-backprop-in-long-range
 And lastly if you are using recent versions of tensorboard, you can use the `PROJECTOR` tab to apply
 dimensionality reduction and analysis tools on the different tensors of the network, such as PCA, t-SNE.
 
@@ -161,7 +161,7 @@ There are a few options on how to compute the validation. For tutorial purposes 
 
 With this simple input, we can now run the code like we did for training, e.g.:
 ```
-python3 ../../panna/evaluate.py --config input_files/validation1.ini
+python3 ../../src/panna/evaluate.py --config input_files/validation1.ini
 ```
 This should very quickly compute the network on our evaluation set, 
 generating a file with `.dat` extension in the folder specified in `eval_dir`. 
@@ -194,7 +194,7 @@ A simple input file for this code uses the following keywords:
 
 If we used the tutorial inputs, we can save the network by running:
 ```
-python3 ../../panna/extract_weights.py --config input_files/extract_weights.ini
+python3 ../../src/panna/extract_weights.py --config input_files/extract_weights.ini
 ```
 (this will by default save the weights of step 1000, please change the `step_number` variable if you have trained your network for longer).
 A new folder (`saved_weights` in this case) will be created containing the network structure as `networks_metadata.json` and one `.npy` file for the weights and biases of each layer. 
@@ -270,7 +270,7 @@ should be considered a new instance of training.
 
 We can now run this new training again as 
 ```
-python3 ../../panna/train.py --config input_files/train2.ini
+python3 ../../src/panna/train.py --config input_files/train2.ini
 ```
 and analyze our results in tensorboard by pointing it to the new training directory:
 ```

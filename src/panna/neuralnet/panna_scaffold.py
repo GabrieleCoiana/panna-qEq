@@ -12,12 +12,17 @@ from functools import partial
 import json
 import logging
 import os
+import sys
 import struct
 import mendeleev
 import numpy as np
 import tensorflow as tf
 
-from lib.errors import NetworkNotAvailableError
+if __package__ != 'panna.neuralnet':
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    from lib.errors import NetworkNotAvailableError
+else:
+    from ..lib.errors import NetworkNotAvailableError
 
 from .a2affnetwork import A2affNetwork, normalize_network_type
 from .basic_scaffold import ScaffoldBasic

@@ -7,12 +7,17 @@
 ###########################################################################
 import logging
 import os
+import sys
 
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.framework import ops
 
-from lib.errors import ShapeError
+if __package__ != 'panna.neuralnet':
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    from lib.errors import ShapeError
+else:
+    from ..lib.errors import ShapeError
 
 from .variable_helpers import _variable_on_cpu, _variable_random_uniform
 

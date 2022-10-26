@@ -8,7 +8,12 @@
 import configparser
 import logging
 
-from lib.parser_callable import converters
+if __package__ != 'panna.neuralnet':
+    import os, sys
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    from lib.parser_callable import converters
+else:
+    from ..lib.parser_callable import converters
 
 logger = logging.getLogger(__name__)
 

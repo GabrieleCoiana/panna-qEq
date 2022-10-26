@@ -13,9 +13,9 @@ import mendeleev
 
 import numpy as np
 
-from lib.atomic_property import recover_property
-from lib.lammps_tools import convert_lattice_to_lmp, convert_vectors_to_lmp
-from lib.units_converter import distances_to_angstrom, energy_to_ev
+from .atomic_property import recover_property
+from .lammps_tools import convert_lattice_to_lmp, convert_vectors_to_lmp
+from .units_converter import distances_to_angstrom, energy_to_ev
 
 logger = logging.getLogger(__name__)
 

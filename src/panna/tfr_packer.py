@@ -14,10 +14,16 @@ import sys
 
 import numpy as np
 
-import gvector
-from lib.tfr_data_structure import tfr_writer, example_tf_packer 
-from lib import init_logging
-from lib.example_bin import load_example
+if __package__ != 'panna':
+    import gvector
+    from lib.tfr_data_structure import tfr_writer, example_tf_packer
+    from lib import init_logging
+    from lib.example_bin import load_example
+else:
+    from . import gvector
+    from .lib.tfr_data_structure import tfr_writer, example_tf_packer
+    from .lib import init_logging
+    from .lib.example_bin import load_example
 
 # logger
 logger = logging.getLogger('panna')

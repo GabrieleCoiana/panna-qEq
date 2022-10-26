@@ -14,10 +14,16 @@ import sys
 
 import numpy as np
 
-import gvector
-from lib import ExampleJsonWrapper
-from lib.log import emit_splash_screen, init_logging
-from lib.parser_callable import converters
+if __package__ != 'panna':
+    import gvector
+    from lib import ExampleJsonWrapper
+    from lib.log import emit_splash_screen, init_logging
+    from lib.parser_callable import converters
+else:
+    from . import gvector
+    from .lib import ExampleJsonWrapper
+    from .lib.log import emit_splash_screen, init_logging
+    from .lib.parser_callable import converters
 
 np.set_printoptions(16)
 

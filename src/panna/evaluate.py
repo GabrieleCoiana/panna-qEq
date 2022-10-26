@@ -21,11 +21,18 @@ import time
 
 from tensorflow.errors import NotFoundError
 
-import neuralnet as net
-from lib.example_bin import load_example
-from lib.log import emit_splash_screen, init_logging
-from lib.parser_callable import converters
-from neuralnet.scaffold_selector import scaffold_selector
+if __package__ != 'panna':
+    import neuralnet as net
+    from lib.example_bin import load_example
+    from lib.log import emit_splash_screen, init_logging
+    from lib.parser_callable import converters
+    from neuralnet.scaffold_selector import scaffold_selector
+else:
+    from . import neuralnet as net
+    from .lib.example_bin import load_example
+    from .lib.log import emit_splash_screen, init_logging
+    from .lib.parser_callable import converters
+    from .neuralnet.scaffold_selector import scaffold_selector
 
 logger = logging.getLogger('panna')
 

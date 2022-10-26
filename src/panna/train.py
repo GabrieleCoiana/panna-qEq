@@ -18,10 +18,17 @@ import tensorflow as tf
 from tensorflow.python import debug as tf_debug
 from tensorflow.python.ops import control_flow_ops, resources, variables
 
-from lib.log import emit_splash_screen, splash_screen_record, init_logging
-from neuralnet import parameter_file_parser
-from neuralnet.graph_builder import graph_builder
-from neuralnet.scaffold_selector import scaffold_getter
+if __package__ != 'panna':
+    from lib.log import emit_splash_screen, splash_screen_record, init_logging
+    from neuralnet import parameter_file_parser
+    from neuralnet.graph_builder import graph_builder
+    from neuralnet.scaffold_selector import scaffold_getter
+else:
+    from .lib.log import emit_splash_screen, splash_screen_record, init_logging
+    from .neuralnet import parameter_file_parser
+    from .neuralnet.graph_builder import graph_builder
+    from .neuralnet.scaffold_selector import scaffold_getter
+
 
 logger = logging.getLogger('panna')
 

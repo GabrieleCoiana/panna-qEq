@@ -10,10 +10,15 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 import json
 import os
+import sys
 
 import numpy as np
 
-from lib.units_converter import distances_to_angstrom
+if __package__ != 'panna.gvector':
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    from lib.units_converter import distances_to_angstrom
+else:
+    from ..lib.units_converter import distances_to_angstrom
 
 
 def requires_parameters(method):

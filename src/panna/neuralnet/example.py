@@ -8,7 +8,12 @@
 import numpy as np
 import tensorflow as tf
 
-from lib.example_bin import Example
+if __package__ != 'panna.neuralnet':
+    import os, sys
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    from lib.example_bin import Example
+else:
+    from ..lib.example_bin import Example
 
 
 def iterator_over_tfdata(g_size, *args, **kwargs):

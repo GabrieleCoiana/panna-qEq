@@ -15,10 +15,17 @@ import os
 
 from tensorflow.errors import NotFoundError
 
-import neuralnet as net
-from gvect_calculator import extract_gvect_func
-from lib.log import emit_splash_screen, init_logging
-from lib.parser_callable import converters
+if __package__ != 'panna':
+    import neuralnet as net
+    from gvect_calculator import extract_gvect_func
+    from lib.log import emit_splash_screen, init_logging
+    from lib.parser_callable import converters
+else:
+    from . import neuralnet as net
+    from .gvect_calculator import extract_gvect_func
+    from .lib.log import emit_splash_screen, init_logging
+    from .lib.parser_callable import converters
+
 
 logger = logging.getLogger('panna')
 

@@ -9,11 +9,16 @@ from collections import namedtuple
 from copy import deepcopy
 import logging
 import os
+import sys
 
 import numpy as np
 import tensorflow as tf
 
-from lib.errors import ShapeError
+if __package__ != 'panna.neuralnet':
+    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    from lib.errors import ShapeError
+else:
+    from ..lib.errors import ShapeError
 
 from .layers import Layer
 

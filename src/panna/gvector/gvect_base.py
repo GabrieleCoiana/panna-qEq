@@ -15,7 +15,7 @@ import sys
 import numpy as np
 
 if __package__ != 'panna.gvector':
-    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from lib.units_converter import distances_to_angstrom
 else:
     from ..lib.units_converter import distances_to_angstrom

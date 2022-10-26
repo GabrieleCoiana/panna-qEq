@@ -12,6 +12,7 @@ import logging
 import os
 import sys
 import time
+import configparser
 
 import numpy as np
 import tensorflow as tf
@@ -20,17 +21,28 @@ from tensorflow.python.ops import control_flow_ops, resources, variables
 
 if __package__ != 'panna':
     from lib.log import emit_splash_screen, splash_screen_record, init_logging
-    from neuralnet import parameter_file_parser
+    from lib.parser_callable import converters
     from neuralnet.graph_builder import graph_builder
     from neuralnet.scaffold_selector import scaffold_getter
+    
 else:
     from .lib.log import emit_splash_screen, splash_screen_record, init_logging
-    from .neuralnet import parameter_file_parser
+    from .lib.parser_callable import converters
     from .neuralnet.graph_builder import graph_builder
     from .neuralnet.scaffold_selector import scaffold_getter
 
 
 logger = logging.getLogger('panna')
+
+def parameter_file_parser(filename):
+    config = configparser.ConfigParser(converters=converters)
+    logger.info('reading {}'.format(filename))
+    config.read(filename)
+    if not config.has_section('PARALLELIZATION'):
+        config.add_section('PARALLELIZATION')
+        logger.info('Parallelization is not tuned'
+                    ' - using defaults may result in low efficiency')
+    return config
 
 
 def setup_environment(flags):  # pylint: disable=too-many-branches
@@ -73,8 +85,8 @@ def setup_environment(flags):  # pylint: disable=too-many-branches
     fsh.emit(splash_screen_record)
 
     logger.addHandler(fsh)
-    # now that loggers are complete we can f
-    # do the splash screen in every file logger
+    # now that loggers are complete we can 
+    # add the splash screen in every file logger
 
     # creation of the cluster
     if not flags.debug_parallel:
@@ -122,7 +134,7 @@ def setup_environment(flags):  # pylint: disable=too-many-branches
         cluster = tf.train.ClusterSpec({
             'worker': list_of_worker_nodes,
         })
-    # extended splash screen
+    
     if parallel_environment:
         logger.info('running in parallel environment')
         logger.info('node name: {}'.format(list_of_nodes[task_index]))
@@ -311,7 +323,7 @@ def main():
     parser.add_argument("--parameter_servers",
                         type=int,
                         default=0,
-                        help='number of parameter server, default 0')
+                        help='number of parameter servers, default 0')
     parser.add_argument("--debug_parallel_index", type=int, help='index 0 or 1')
     parser.add_argument("--communication_port",
                         type=int,
@@ -333,6 +345,7 @@ def main():
 
     if task_index == 0:
         emit_splash_screen(logger)
+
     parameters = parameter_file_parser(flags.config)
 
     list_of_nodes, cluster, task_index = setup_environment(flags)

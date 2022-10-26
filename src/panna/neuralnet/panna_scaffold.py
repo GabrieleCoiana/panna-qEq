@@ -19,7 +19,7 @@ import numpy as np
 import tensorflow as tf
 
 if __package__ != 'panna.neuralnet':
-    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from lib.errors import NetworkNotAvailableError
 else:
     from ..lib.errors import NetworkNotAvailableError

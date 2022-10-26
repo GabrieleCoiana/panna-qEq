@@ -23,6 +23,6 @@ def scaffold_getter(config):
         scaffold_type = 'PANNA'
 
     logger.info('scaffold type: %s', scaffold_type)
-    Scaffold = scaffold_selector(scaffold_type)
-    scaffold = Scaffold(config)
+    scaffold_class = scaffold_selector(scaffold_type)
+    scaffold = scaffold_class(config)
     return scaffold

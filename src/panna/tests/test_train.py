@@ -14,9 +14,9 @@ import numpy as np
 
 import tensorflow as tf
 
-from neuralnet.trainparameters import TrainParameters
-from neuralnet.trainparameters import IOParameters
-from neuralnet.trainparameters import ParallelizationParameters
+from neuralnet.train_parameters import TrainParameters
+from neuralnet.train_parameters import IOParameters
+from neuralnet.train_parameters import ParallelizationParameters
 from neuralnet.panna_scaffold import PannaScaffold
 from lib.parser_callable import converters
 

@@ -14,7 +14,7 @@ import tensorflow as tf
 from tensorflow.python.framework import ops
 
 if __package__ != 'panna.neuralnet':
-    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from lib.errors import ShapeError
 else:
     from ..lib.errors import ShapeError

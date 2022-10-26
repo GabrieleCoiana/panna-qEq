@@ -14,7 +14,7 @@ from functools import partial
 import numpy as np
 
 from lib.errors import NetworkNotAvailableError, ShapeError
-from neuralnet.trainparameters import parameter_file_parser
+from neuralnet.train_parameters import parameter_file_parser
 from tests.utils import section_mocker
 
 # override all loggers output to only critical

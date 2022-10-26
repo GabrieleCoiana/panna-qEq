@@ -10,7 +10,7 @@ import tensorflow as tf
 
 if __package__ != 'panna.neuralnet':
     import os, sys
-    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from lib.example_bin import Example
 else:
     from ..lib.example_bin import Example

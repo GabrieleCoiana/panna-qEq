@@ -51,12 +51,12 @@ def _main(conf_file):
     output_type = folder_info.get('output_type', 'PANNA')
     output_file = folder_info.get('output_file', 'panna.in')
     # 0 is for OPENKIM compatible version
-    gversion = folder_info.get('gvector_version', 1)
+    gversion = folder_info.getint('gvector_version', 1)
     extra_data = {}
 
     if gvector_input:
         gvect_func = recover_gvect(gvector_input)
-        if int(gversion) == 1:
+        if gversion == 1:
             extra_data['gvect_params'] = gvect_func.gvect
         else:
             extra_data['gvect_params'] = gvect_func.gvect_v0

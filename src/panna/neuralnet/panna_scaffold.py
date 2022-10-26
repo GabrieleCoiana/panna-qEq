@@ -374,10 +374,6 @@ class PannaScaffold(ScaffoldBasic):
         self._index += 1
         return result
 
-    def dump_scaffold_lammps(self, folder, filename, extradata):
-        # TODO
-        pass
-
     def dump_scaffold_metadata(self, folder, extra_data=None):
         """ Create and write a scaffold metadata needed to reconstruct it.
 
@@ -1042,36 +1038,32 @@ class PannaScaffold(ScaffoldBasic):
         # which is ok, we can take care of this on lammps reader end
         # for gversion = 0 make sure that the order is as before?
         mod_data = {}
-        mod_data['RsN_rad'] = kwargs['gvect_params']['RsN_rad']
+        if kwargs["gversion"] == 1:
+            mod_data['RsN_rad'] = kwargs['gvect_params']['RsN_rad']
         mod_data['eta_rad'] = kwargs['gvect_params']['eta_rad']
         mod_data['Rc_rad'] = kwargs['gvect_params']['Rc_rad']
-        mod_data['Rs0_rad'] = kwargs['gvect_params']['Rs_rad'][0]
         if kwargs["gversion"] == 1:
             mod_data['Rs_rad'] =kwargs['gvect_params']['Rs_rad']
         elif kwargs["gversion"] == 0:
-            if kwargs['gvect_params']['Rs_rad'] > 1:
-                mod_data['Rsst_rad'] = kwargs['gvect_params']['Rs_rad'][1] \
-                    - kwargs['gvect_params']['Rs_rad'][0]
-            else:
-                mod_data['Rsst_rad'] = 0.0
+            mod_data['Rs0_rad'] = kwargs['gvect_params']['Rs0_rad']
+            mod_data['Rsst_rad'] = kwargs['gvect_params']['Rsst_rad']
+            mod_data['RsN_rad'] = kwargs['gvect_params']['RsN_rad']
         #error can be raised if version not implemented
 
-        mod_data['RsN_ang'] = kwargs['gvect_params']['RsN_ang']
+        if kwargs["gversion"] == 1:
+            mod_data['RsN_ang'] = kwargs['gvect_params']['RsN_ang']
         mod_data['eta_ang'] = kwargs['gvect_params']['eta_ang']
         mod_data['Rc_ang'] = kwargs['gvect_params']['Rc_ang']
-        mod_data['Rs0_ang'] = kwargs['gvect_params']['Rs_ang'][0]
-
         if kwargs["gversion"] == 1:
-            mod_data['Rs_ang'] = kwargs['gvect_params']['Rs_ang'] 
+            mod_data['Rs_ang'] = kwargs['gvect_params']['Rs_ang']
         elif kwargs["gversion"] == 0:
-            if kwargs['gvect_params']['Rs_ang'] > 1:
-                mod_data['Rsst_ang'] = kwargs['gvect_params']['Rs_ang'][1] \
-                - kwargs['gvect_params']['Rs_ang'][0]
-            else:
-                mod_data['Rsst_ang'] = 0.0
+            mod_data['Rs0_ang'] = kwargs['gvect_params']['Rs0_ang']
+            mod_data['Rsst_ang'] = kwargs['gvect_params']['Rsst_ang']
+            mod_data['RsN_ang'] = kwargs['gvect_params']['RsN_ang']
+            mod_data['zeta'] = kwargs['gvect_params']['zeta']
         mod_data['ThetasN'] = kwargs['gvect_params']['ThetasN']
-        mod_data['zeta'] = kwargs['gvect_params']['zeta']
         if kwargs["gversion"] == 1:
+            mod_data['zeta'] = kwargs['gvect_params']['zeta']
             mod_data['Thetas'] = kwargs['gvect_params']['Thetas']
 
         if 'weights' in kwargs['gvect_params']:

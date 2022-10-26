@@ -18,9 +18,8 @@ import logging
 
 import numpy as np
 
-from lib.log import init_logging
-logger = logging.getLogger('panna.tools')
-
+logger = logging.getLogger()
+logging.basicConfig(level=logging.INFO)
 
 class PartialFingerprintNotFound(ValueError):
     pass
@@ -37,9 +36,8 @@ def cosine_weighted_distance(fingerprint_1, fingerprint_2, weights):
 
     Parameters
     ----------
-    fingerprint_1: numpy_array (fingerprint_size)
-    fingerprint_2: numpy_array (fingerprint_size)
-                   This routine can also handle (?, fingerprint_size)
+    fingerprint_1: numpy_array (n_species, n_species, fingerprint_size)
+    fingerprint_2: numpy_array (?, n_species, n_species, fingerprint_size)
                    where ? is the number of fingerprint we want to
                    compare fingerprint 1 with.
     weights: numpy_array (n_species, n_species)
@@ -53,10 +51,10 @@ def cosine_weighted_distance(fingerprint_1, fingerprint_2, weights):
     """
     den_1 = np.sqrt(np.sum(np.sum(fingerprint_1**2, axis=-1) * weights))
     den_2 = np.sqrt(
-        np.sum(np.sum(fingerprint_2**2, axis=-1) * weights, axis=-1))
+        np.sum(np.sum(fingerprint_2**2, axis=-1) * weights, axis=(1,2)))
 
     numerator = np.sum(
-        np.sum(fingerprint_1 * fingerprint_2, axis=-1) * weights, axis=-1)
+        np.sum(fingerprint_1 * fingerprint_2, axis=-1) * weights, axis=(1,2))
     distances = .5 * (1 - numerator / (den_1 * den_2))
     return distances.reshape(-1)
 
@@ -83,10 +81,10 @@ def euclid_weighted_distance(fingerprint_1, fingerprint_2, weights):
     """
     den_1 = np.sqrt(np.sum(np.sum(fingerprint_1**2, axis=-1) * weights))
     den_2 = np.sqrt(
-        np.sum(np.sum(fingerprint_2**2, axis=-1) * weights, axis=-1))
+        np.sum(np.sum(fingerprint_2**2, axis=-1) * weights, axis=(1,2)))
 
     numerator = np.sum(
-        np.sum((fingerprint_1 - fingerprint_2)**2, axis=-1) * weights, axis=-1)
+        np.sum((fingerprint_1 - fingerprint_2)**2, axis=-1) * weights, axis=(1,2))
 
     if (numerator < 0).any():
         tmp = numerator[numerator < 0]
@@ -95,7 +93,6 @@ def euclid_weighted_distance(fingerprint_1, fingerprint_2, weights):
     logger.debug('distance call')
 
     distances = numerator / (den_1**2 + den_2**2 + 2 * den_1 * den_2)
-    # the distance is of shape (?, 1) or (1) so we need to reshape it
     return distances.reshape(-1)
 
 
@@ -220,7 +217,6 @@ def main(indir, outdir, nproc, species_sequence, euclidean):
 
 
 if __name__ == '__main__':
-    init_logging()
     PARSER = argparse.ArgumentParser(
         description='calculate distances between Fingerprints')
     PARSER.add_argument(

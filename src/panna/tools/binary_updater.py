@@ -14,20 +14,25 @@ import argparse
 import logging
 import multiprocessing as mp
 import os
+import sys
 from itertools import repeat
-
 import numpy as np
 
-from gvector.write_routine import binary_encoder
-from lib import init_logging
-from neuralnet.example import Example
-from neuralnet.example import load_example
+try:
+  from panna.gvector.binary_encoder import binary_encoder
+  from panna.lib.log import emit_splash_screen
+  from panna.lib.example_bin import Example, load_example
+except:
+  sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+  from gvector.binary_encoder import binary_encoder
+  from lib.log import emit_splash_screen
+  from lib.example_bin import Example, load_example
 
-logger = logging.getLogger('panna.tools')  # pylint: disable=invalid-name
+logger = logging.getLogger(__name__)
 
-STARTING_VERSION = 'no_version'
+STARTING_VERSION = 'v0'
 END_VERSION = 'v0_sparse'
-CONVERSION_PARAMETERS = {'derivatives': True, 'per_atom_quantity': True}
+CONVERSION_PARAMETERS = {'derivatives': True, 'per_atom_quantity': False}
 
 
 def _load_example_preversion(filename, derivatives=False):
@@ -77,6 +82,7 @@ def _load_example_preversion(filename, derivatives=False):
     return Example(g_vectors=gvect_tensor,
                    species_vector=spec_tensor,
                    true_energy=en,
+                   d_g_available=derivatives,
                    d_g_vectors=dgvect_tensor,
                    forces=forces,
                    name=key)
@@ -194,7 +200,6 @@ def _apply_args_and_kwargs(fn, args, kwargs):
 
 
 def main(indir, outdir, number_of_processes=2):
-
     # create outdir
     if not os.path.isdir(outdir):
         os.makedirs(outdir)
@@ -243,8 +248,6 @@ def main(indir, outdir, number_of_processes=2):
 
 
 if __name__ == '__main__':
-    init_logging()
-
     PARSER = argparse.ArgumentParser(description='update bin example files')
     PARSER.add_argument('-i',
                         '--indir',
@@ -265,6 +268,9 @@ if __name__ == '__main__':
 
     ARGS = PARSER.parse_args()
     if ARGS.indir and ARGS.outdir:
+        logging.basicConfig(level=logging.INFO,
+                            format='%(levelname)s - %(message)s')
+        emit_splash_screen(logger)
         main(indir=ARGS.indir,
              outdir=ARGS.outdir,
              number_of_processes=ARGS.parallel)

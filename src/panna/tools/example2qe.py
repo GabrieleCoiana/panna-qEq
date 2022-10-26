@@ -9,9 +9,15 @@ import argparse
 import hashlib
 import logging
 import os
+import sys
 from string import Template
 
-from lib import ExampleJsonWrapper, init_logging
+try:
+  from panna.lib import ExampleJsonWrapper, init_logging
+except:
+  sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+  from lib import ExampleJsonWrapper, init_logging
+
 
 # pylint: disable=invalid-name
 logger = logging.getLogger('panna.tools')
@@ -153,7 +159,7 @@ if __name__ == '__main__':
     init_logging()
     logger.warning('this script need to be personalized')
     PARSER = argparse.ArgumentParser(
-        description='Making lammps pos file from example')
+        description='Making QE input file from example')
     PARSER.add_argument(
         '-i', '--indir', type=str, help='in path', required=True)
     PARSER.add_argument(
@@ -172,3 +178,4 @@ if __name__ == '__main__':
             indir=ARGS.indir,
             outdir=ARGS.outdir,
             kpoints_density=ARGS.kpp_density)
+

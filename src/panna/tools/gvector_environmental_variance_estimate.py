@@ -4,23 +4,28 @@ examples
 import argparse
 import logging
 import os
+import sys
 import numpy as np
 
-from neuralnet.example import load_example
-from lib.distances import cos_distance
-
-from lib import init_logging
+try:
+  from panna.lib import init_logging
+  from panna.lib.example_bin import load_example
+  from panna.lib.distances import cos_distance
+except:
+  sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+  from lib import init_logging
+  from lib.example_bin import load_example
+  from lib.distances import cos_distance
 
 logger = logging.getLogger('panna.tools')
 
 
-def main(indir, outdir, number_of_species, per_atom):
+def main(indir, outdir, per_atom):
     """
     """
 
     logger.info('Input dir %s', indir)
     logger.info('Output dir requested %s', outdir)
-    logger.info('Number of species %d', number_of_species)
 
     if os.path.isdir(outdir):
         outdir = os.path.abspath(outdir)
@@ -35,7 +40,7 @@ def main(indir, outdir, number_of_species, per_atom):
     name_energy_variance = []
     for file in examples:
         path = os.path.join(indir, file)
-        example = load_example(path, number_of_species)
+        example = load_example(path)
 
         energy = example.true_energy
         if per_atom:
@@ -73,12 +78,6 @@ if __name__ == '__main__':
     PARSER.add_argument(
         '-o', '--outdir', type=str, help='out path', required=True)
     PARSER.add_argument(
-        '-ns',
-        '--number_of_species',
-        type=int,
-        help='number of species',
-        required=True)
-    PARSER.add_argument(
         '--per_atom',
         help='produce per atom name_energy_volume',
         action='store_true')
@@ -88,5 +87,4 @@ if __name__ == '__main__':
     main(
         indir=CLI_ARGS.indir,
         outdir=CLI_ARGS.outdir,
-        number_of_species=CLI_ARGS.number_of_species,
         per_atom=CLI_ARGS.per_atom)

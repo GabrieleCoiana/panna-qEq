@@ -7,9 +7,13 @@
 ###########################################################################
 import argparse
 import os
+import sys
 
-from lib import ExampleJsonWrapper
-from lib import init_logging
+try:
+  from panna.lib import ExampleJsonWrapper, init_logging
+except:
+  sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+  from lib import ExampleJsonWrapper, init_logging
 
 def example2lammp(indir, outdir):
     """ convert PANNA example format to lammps pos format

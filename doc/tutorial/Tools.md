@@ -96,9 +96,126 @@ python extxyz_parser.py -i in_dir -o out_dir
 
 ---
 ### Data exporters
+
+Here we collect some tools that can be useful to convert your  `.example` files to other formats for further processing.
+
+#### Exporter to Quantum ESPRESSO
+This tool is supposed to help you create QE inputs from your examples. Of course QE inputs require many more parameters, therefore this script should be customized by the user to fill in the details as appropriate. Please inspect the code to see the provided sample input parameters. The cell and positions will be filled in from examples in a folder, and a new folder will be created for each structure with an input file and if needed a job file as well.
+
+Basic usage:
+```
+python example2qe.py -i in_dir -o out_dir
+```
+
+#### Exporter to LAMMPS
+This tool lets you export `.example` files as LAMMPS positions files. It will act on all the files in the input folder and create one folder per configuration containing the positions file.
+
+A basic usage would look like:
+```
+python example2lammps_pos.py -i in_dir -o out_dir
+```
+
+
+#### Exporter to animated XCrySDen format (axsf)
+This tool lets you export multiple `.example` files in a folder to a single XCrySDen animation `.axsf` file, for simple visualization of multiple configurations.
+
+The basic usage is:
+```
+python json2axsf.py -i in_dir -o out_dir
+```
+
+
 ---
 ### Pre-processing
+
+In this section we include tools that can be useful to analyze your data before training. They are mostly tools that help you analyze the atomic environments and can guide you in the selection of the descriptor parameters.
+
+#### Gvector visualizer
+This simple tool allows you to visualize the radial and  angular bins of your descriptor, in order to check the width and distribution of the sampling bins. It directly takes as input the configuration file of `gvect_calculator`, and for now it works with mBP symmetry functions.
+The tool requires the `matplotlib` package with a GUI backend to visualize the final plot.
+
+A typical usage is:
+```
+python gvect_param_check.py -c gvect_input.ini
+```
+
+#### Compute descriptor statistics
+This tool considers the descriptors of all atoms in all configurations in a folder and it computes the average and standard deviation for each bin.
+The tool requires the `pandas` package. It expects binary descriptor files in the input folder and outputs a single `json` with the average and standard deviation lists.
+
+A typical usage is:
+```
+python normalize_input_vectors.py -s in_dir -o out_dir
+```
+
+#### Visualize angular atomic distribution
+This tool is used to analyze the distribution of atoms in the radial bins of the descriptor. It considers all configurations in a folder (`.example` files) and generates species resolved plots with the number of atoms that are found in a given angular and radial bin. Radial cutoff (in Angstrom) and atomic sequence (comma separated) need to be specified, see the source file for other plotting options (number of bins, log scale, saving the data of the plot).
+The tool requires the `matplotlib` package with a GUI backend to visualize the final plot.
+
+A basic usage would look like:
+```
+python ijk.py -s in_dir -r 5.0 -a H,N,C,O
+```
+
+#### Compute fingerprints and cluster
+This is a set of tools that is used to compare configurations and possibly cluster them, in order to study the distribution of your training data. I comprises of 3 different codes that can be used in succession:
+
+- `fingerprint_USPEX_erf.py` is used to compute the "fingerprint" descriptor for each structure and species pair as defined in `doi.org/10.1063/1.3079326`. Some of the fingerprint parameters are hardcoded and need to be changed in the source to obtain different fingerprints. Weights are also computed proportional to the number of atoms of a specific species pair in the structure. The script acts on all `.example` in the input directory and creates `.fprint` files in an output directory specified as:
+```
+        python fingerprint_USPEX_erf.py -i in_dir -o out_dir
+```
+
+- `fingerprint_distances.py` acts on fingerprint files and computes the distances between all configurations in a folder. Distance measure implemented are either the cosine distance from `doi.org/10.1063/1.3079326` or euclidean distance (flag `--euclidean`). It produces the distance matrix between the examples (as `.npy` upper triangular matrix) as well as a file with energy and volume data of all configurations. Input needs to specify the species to consider in computing the distance (as a comma separated sequence), in addition to input and output folders:
+```
+        python fingerprint_distances.py -i in_dir -o out_dir -s H,C,O
+```
+
+- `fingerprint_clusterization.py` finally starts from the distance matrix to perform a basic distance-based clusterization (creates clusters where all examples are separated by a distance larger than a given threshold). The script will cluster based on all distances between a minimum and maximum value (defaulting to min and max distances) sampled with a given step (starting at half the step). Optionally, energy can be considered in the clustering, see the source code for more details. The final ouput consists of a file `clusters_interval*.dat` with one row per threshold value containing the indices of the clusters for each example; and a file `clusters_probed*.dat` containing the used threshold and number of clusters for each line.
+A sample input for clusterization (sampling thresholds 0.02, 0.04) would be:
+```
+        python fingerprint_clusterization.py -i indir -o outdir -min 0.01 -max 0.05 -dint 0.02
+```
+
+
+#### Estimate descriptor variance
+This tool can be useful to understand how much variability is there the atomic environments for a given configuration. It considers all binary descriptor files in a folder, and for each configuration it computes the cosine distances between the descriptors of all pairs of atoms. It then outputs a text file with one line per configuration containing the filename, the energy and the variance of the distances vector.
+
+The basic usage is:
+```
+python gvector_environmental_variance_estimate.py -i in_dir -o out_dir
+```
+
+
 ---
 ### Post-processing
----
-### Misc
+
+The tools included in this section can be used to process some of the data, outputs of training or validation for further uses.
+
+#### binary_updater.py
+This tool can convert between different formats of the binary gvectors. The currect version of gvector is called "v0", and the main usage of this tool is converting from the _dense_ to the _sparse_ format of derivatives. For back compatibility, the tool also supports conversions from the old "no version" encoding.
+
+Some of the converions options (versions and data to be included) are hardcoded and need to be modified in the source file, while the input and output directory are specified as usual:
+```
+python binary_updater.py -i in_dir -o out_dir
+```
+
+#### checkpoint_to_csv.py
+This tool acts on a folder of checkpoints generated during training and extracts some of the data displayed by Tensorboard as `.csv` text files.
+
+Standard usage is:
+```
+python checkpoint_to_csv.py -i in_dir -o out_dir
+```
+
+#### gvector_writer.py
+This tool can read gvector `.bin` binary files and convert them to plaintext. When passed a directory it will create a `*_plain.dat` file in the same folder for each configuration with the gvector of one atom per column. The argument `-a x` changes the behaviour to create a single file with the average gvector over all configurations for the first `x` elements (as specified at gvector creation time).
+
+Standard usage is:
+```
+python gvector_writer.py -s in_dir
+```
+
+
+
+
+

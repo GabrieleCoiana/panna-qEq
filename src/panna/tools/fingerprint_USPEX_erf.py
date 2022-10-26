@@ -14,8 +14,8 @@ import itertools
 import json
 import multiprocessing as mp
 import os
+import sys
 import logging
-from lib import ExampleJsonWrapper
 
 import random
 from functools import partial
@@ -23,11 +23,15 @@ from functools import partial
 import numpy as np
 from scipy.special import erf
 
-# PANNA interfaces
-# add PANNA folder to PYTHONPATH variable to enable these
-# SEE README.md
-from gvector.pbc import replicas_max_idx
-from lib.log import init_logging
+try:
+  from panna.lib import ExampleJsonWrapper
+  from panna.lib.log import init_logging
+  from panna.gvector.pbc import replicas_max_idx
+except:
+  sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+  from lib import ExampleJsonWrapper
+  from lib.log import init_logging
+  from gvector.pbc import replicas_max_idx
 
 logger = logging.getLogger('panna.tools')
 
@@ -72,7 +76,7 @@ def fingprint(Rmax, delta, sigma, outdir, d, filename):
 
     # convert type vector to int vector with internal mapping
     type_vector = np.asarray([_symbol_map[x] for x in type_vector],
-                             dtype=np.int)
+                             dtype=int)
 
     n_atoms = len(type_vector)
     n_species = len(all_symbols)
@@ -107,12 +111,12 @@ def fingprint(Rmax, delta, sigma, outdir, d, filename):
     n_replicas = len(replicas_idxs)
     # the lattice matrix should be [a1, a2, a3]
     # nubmer of replicas, 3
-    # replicas_displeacemnt_vecotrs = np.einsum('ij,jk->ik', replicas_idxs,
+    # replicas_displacement_vectors = np.einsum('ij,jk->ik', replicas_idxs,
     #                                           lattice_vectors)
-    replicas_displeacemnt_vecotrs = replicas_idxs @ lattice_vectors
+    replicas_displacement_vectors = replicas_idxs @ lattice_vectors
     # number of replicas * number of atoms, 3
     extended_pos_vector = (
-        pos_vector[:, np.newaxis, :] + replicas_displeacemnt_vecotrs).reshape(
+        pos_vector[:, np.newaxis, :] + replicas_displacement_vectors).reshape(
             n_atoms * n_replicas, 3)
     extended_type_vector = np.tile(type_vector[:, np.newaxis],
                                    [1, n_replicas]).flatten()
@@ -203,19 +207,17 @@ def main(indir, outdir, nproc, d):
     if len(jsonfiles) > 0:
         random.shuffle(jsonfiles)
         print('the first one in line {}'.format(jsonfiles[0]), flush=True)
-    #jsonfiles=[os.path.join(indir, 'T1200_step1414.example')]
     Rmax = 10.0  #Ang
     delta = 0.08  #Ang
     sigma = 0.03  #Ang
     #sigma = sigma/np.sqrt(2 * np.log(2))
-    ###############################################################
-    #ff=open(os.path.join(outdir , 'fp_done.dat'), 'a')
+
     Fingprint = partial(fingprint, Rmax, delta, sigma, outdir, d)
     i = 0
     print(
         'Jsons to be done per proc = {}'.format(int(len(jsonfiles) / nproc)),
         flush=True)
-    
+
     while i <= int(len(jsonfiles) / nproc):
         ll = i * nproc
         lu = (i + 1) * nproc

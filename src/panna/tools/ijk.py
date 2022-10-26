@@ -6,25 +6,25 @@
 # For further information on the license, see the LICENSE.txt file        #
 ###########################################################################
 import os
+import sys
 import argparse
 import itertools
 import logging
 import numpy as np
 
 import matplotlib.pyplot as plt
-
 from matplotlib import cm
 
-# PANNA interfaces
-# add PANNA folder to PYTHONPATH variable to enable these
-from gvector.pbc import replicas_max_idx
-
-from lib import ExampleJsonWrapper
-from lib import init_logging
+try:
+  from panna.gvector.pbc import replicas_max_idx
+  from panna.lib import ExampleJsonWrapper, init_logging
+except:
+  sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+  from gvector.pbc import replicas_max_idx
+  from lib import ExampleJsonWrapper, init_logging
 
 # logger
 logger = logging.getLogger('panna.tools')
-
 
 
 def main(args):

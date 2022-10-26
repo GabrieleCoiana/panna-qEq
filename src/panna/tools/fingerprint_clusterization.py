@@ -43,7 +43,7 @@ def cluster_distance_matrix(distance_matrix, cutoff):
     Returns
     -------
     numpy_array (matrix side):
-        for each element return it's cluster with the given cutoff,
+        for each element return its cluster with the given cutoff,
         cluster indexes are randomly sorted
     """
 
@@ -208,8 +208,8 @@ def read_name_energy_volume(name_energy_volume_file, per_atom=False):
             volumes.append(volume_per_atom if per_atom else volume)
 
     return np.asarray(names), np.asarray(
-        energies, dtype=np.float), np.asarray(
-            volumes, dtype=np.float)
+        energies, dtype=float), np.asarray(
+            volumes, dtype=float)
 
 
 def read_distance_matrix(distance_file,
@@ -277,7 +277,7 @@ def main(input_directory,
     """Cluster a distance matrix.
 
     Load distance matrix (binary format, only triangular upper)
-    Clusetrize it
+    Clusterize it
     Save resulting vector to file
 
     Parameters
@@ -287,16 +287,16 @@ def main(input_directory,
     output_direcotry: str
         output directory
     discrete_interval: float
-        spacing between different range of clustering (??)
+        spacing between different range of clustering
     alpha: float
         energy multiplier when computing the augmented distance
     pool_size: integer
         number of process
     interval_minimum: float
-        if provide fix the minimum value that will be used as cutoff
+        if provided fixes the minimum value that will be used as cutoff
         in clustering
     interval_maximum: float
-        if provide fix the maximum value that will be used as cutoff
+        if provided fixes the maximum value that will be used as cutoff
         in clustering
     per_atom: bool
         load per atom energy and volume file
@@ -353,7 +353,6 @@ def main(input_directory,
 
     file_stream_1.close()
     file_stream_2.close()
-
 
 if __name__ == '__main__':
     PARSER = argparse.ArgumentParser(description='calc distances')

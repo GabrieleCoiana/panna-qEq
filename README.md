@@ -7,10 +7,10 @@
 PANNA is a package to train and validate all-to-all connected network models for BP[1] and modified-BP[2] type
 local atomic environment descriptors and atomic potentials.
 
-* Tutorial and Documentation: `https://pannadevs.gitlab.io/pannadoc/`
-* Mailing list: `https://groups.google.com/d/forum/pannausers`
-* Source: `https://gitlab.com/pannadevs/panna`
-* Bug reports: `https://gitlab.com/pannadevs/panna/issues`
+* Tutorial and Documentation: [https://pannadevs.gitlab.io/pannadoc/](https://pannadevs.gitlab.io/pannadoc/)
+* Mailing list: [https://groups.google.com/d/forum/pannausers](https://groups.google.com/d/forum/pannausers)
+* Source: [https://gitlab.com/pannadevs/panna](https://gitlab.com/pannadevs/panna)
+* Bug reports: [https://gitlab.com/pannadevs/panna/issues](https://gitlab.com/pannadevs/panna/issues)
 
     
 #### It provides:

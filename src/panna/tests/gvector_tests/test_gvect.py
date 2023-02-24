@@ -8,11 +8,18 @@
 import json
 import os
 import unittest
+import configparser
 
 import numpy as np
 
-from lib import ExampleJsonWrapper
-from gvector import GvectBP, GvectmBP
+if __package__ != 'panna':
+    from lib import ExampleJsonWrapper
+    from gvector import GvectBP, GvectmBP
+    from lib.parser_callable import converters
+else:
+    from .lib import ExampleJsonWrapper
+    from .gvector import GvectBP, GvectmBP
+    from .lib.parser_callable import converters
 
 
 class TestGvector(unittest.TestCase):
@@ -22,22 +29,15 @@ class TestGvector(unittest.TestCase):
         """
         example_location = os.path.join('tests', 'data', 'gvector', 'examples')
         ref_location = os.path.join('tests', 'data', 'gvector', 'references')
+        config_file = os.path.join('tests', 'data', 'gvector', 'gvect_mBP1.ini')
         gvect_func = GvectmBP(
             compute_dgvect=True,
             species='H, C, N, O',
-            param_unit='angstrom',
             pbc_directions=None,
-            Rc_rad=4.6,
-            Rs0_rad=0.5,
-            RsN_rad=16,
-            eta_rad=16,
-            Rc_ang=3.1,
-            ThetasN=8,
-            Rs0_ang=0.5,
-            RsN_ang=4,
-            eta_ang=16,
-            zeta=50,
             sparse_dgvect=False)
+        config = configparser.ConfigParser(converters=converters)
+        config.read(config_file)
+        gvect_func.parse_parameters(config['GVECT_PARAMETERS'])
 
         for example_file in os.listdir(example_location):
             example_number = example_file.split('.')[0]
@@ -45,7 +45,7 @@ class TestGvector(unittest.TestCase):
                 os.path.join(example_location, example_file),
                 gvect_func.species_idx_2str)
 
-            _dummy, gvects, dgvects = gvect_func(
+            output = gvect_func(
                 example.key, example.angstrom_positions,
                 example.species_indexes, example.angstrom_lattice_vectors)
             ref_gvects = np.load(
@@ -54,14 +54,12 @@ class TestGvector(unittest.TestCase):
                 os.path.join(ref_location, example_number + '_dgvects.npy'))
 
             # test g
-            np.testing.assert_array_almost_equal(gvects, ref_gvects)
+            np.testing.assert_array_almost_equal(output['Gvect'], ref_gvects)
 
-            # test dg, shape need to be adapted because the sotored npy array
-            # are a little different
-            dgvects = np.asarray(dgvects)
-            dgvects = dgvects.reshape(*dgvects.shape[:-2],
-                                      dgvects.shape[-1] * dgvects.shape[-2])
+            # test dg
+            dgvects = np.asarray(output['dGvect'])
             np.testing.assert_array_almost_equal(dgvects, ref_dgvects)
+
 
     def test_2(self):
         """
@@ -69,22 +67,15 @@ class TestGvector(unittest.TestCase):
         """
         example_location = os.path.join('tests', 'data', 'gvector', 'examples')
         ref_location = os.path.join('tests', 'data', 'gvector', 'references')
+        config_file = os.path.join('tests', 'data', 'gvector', 'gvect_mBP1.ini')
         gvect_func = GvectmBP(
             compute_dgvect=False,
             species='H, C, N, O',
-            param_unit='angstrom',
             pbc_directions=None,
-            Rc_rad=4.6,
-            Rs0_rad=0.5,
-            RsN_rad=16,
-            eta_rad=16,
-            Rc_ang=3.1,
-            ThetasN=8,
-            Rs0_ang=0.5,
-            RsN_ang=4,
-            eta_ang=16,
-            zeta=50,
             sparse_dgvect=False)
+        config = configparser.ConfigParser(converters=converters)
+        config.read(config_file)
+        gvect_func.parse_parameters(config['GVECT_PARAMETERS'])
 
         for example_file in os.listdir(example_location):
             example_number = example_file.split('.')[0]
@@ -92,49 +83,45 @@ class TestGvector(unittest.TestCase):
                 os.path.join(example_location, example_file),
                 gvect_func.species_idx_2str)
 
-            _dummy, gvects = gvect_func(
+            output = gvect_func(
                 example.key, example.angstrom_positions,
                 example.species_indexes, example.angstrom_lattice_vectors)
             ref_gvects = np.load(
                 os.path.join(ref_location, example_number + '_gvects.npy'))
 
             # test g
-            np.testing.assert_array_almost_equal(gvects, ref_gvects)
+            np.testing.assert_array_almost_equal(output['Gvect'], ref_gvects)
 
     def test_3(self):
         """
         test BP without derivative
-        This test is very incomplete, there is no reference, it just run the
-        code
         """
         example_location = os.path.join('tests', 'data', 'gvector', 'examples')
-        # ref_location = not available
+        ref_location = os.path.join('tests', 'data', 'gvector', 'referencesBP')
+        config_file = os.path.join('tests', 'data', 'gvector', 'gvect_BP.ini')
         gvect_func = GvectBP(
             compute_dgvect=False,
             species='H, C, N, O',
-            param_unit='angstrom',
             pbc_directions=None,
-            Rc=4.6,
-            Rs0=0.5,
-            RsN=16,
-            eta=[9, 12],
-            eta_ang=[9, 12, 20],
-            zeta=[40.7, 52.3, 60],
             sparse_dgvect=False)
+        config = configparser.ConfigParser(converters=converters)
+        config.read(config_file)
+        gvect_func.parse_parameters(config['GVECT_PARAMETERS'])
 
         for example_file in os.listdir(example_location):
-            # example_number = example_file.split('.')[0]
+            example_number = example_file.split('.')[0]
             example = ExampleJsonWrapper(
                 os.path.join(example_location, example_file),
                 gvect_func.species_idx_2str)
 
-            _dummy, gvects = gvect_func(
+            output = gvect_func(
                 example.key, example.angstrom_positions,
                 example.species_indexes, example.angstrom_lattice_vectors)
-            # ref_gvects = not available
+            ref_gvects = np.load(
+                os.path.join(ref_location, example_number + '_gvects.npy'))
 
             # test g
-            # not available
+            np.testing.assert_array_almost_equal(output['Gvect'], ref_gvects)
 
 if __name__ == '__main__':
     unittest.main()

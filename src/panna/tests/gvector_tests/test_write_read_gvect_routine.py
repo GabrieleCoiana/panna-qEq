@@ -10,9 +10,14 @@ import os
 import shutil
 import numpy as np
 
-from gvector.write_routine import binary_encoder
-from neuralnet.example import load_example
-from tests.utils import ROOT_FOLDER
+if __package__ != 'panna':
+    from gvector.binary_encoder import binary_encoder
+    from lib.example_bin import load_example
+    from tests.utils import ROOT_FOLDER
+else:
+    from .gvector.binary_encoder import binary_encoder
+    from .lib.example_bin import load_example
+    from .tests.utils import ROOT_FOLDER
 
 
 class TestIOBinary(unittest.TestCase):

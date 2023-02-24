@@ -10,22 +10,27 @@ import logging
 import unittest
 import unittest.mock as mock
 from functools import partial
-
 import numpy as np
 
-from lib.errors import NetworkNotAvailableError, ShapeError
-from neuralnet.train_parameters import parameter_file_parser
-from tests.utils import section_mocker
+if __package__ != 'panna':
+    from lib.errors import NetworkNotAvailableError, ShapeError
+    from train import parameter_file_parser
+    from neuralnet.scaffold_selector import scaffold_getter
+    from tests.utils import section_mocker
+else:
+    from .lib.errors import NetworkNotAvailableError, ShapeError
+    from .train import parameter_file_parser
+    from .neuralnet.scaffold_selector import scaffold_getter
+    from .tests.utils import section_mocker
 
 # override all loggers output to only critical
-# INFO and WARNING are full of useless quantity in testing
+# INFO and WARNING are full of useless quantities in testing
 logging.disable(logging.CRITICAL)
-
 
 class Test_TrainParams(unittest.TestCase):
     def setUp(self):
         # create a default mocker
-        io_infomration = {
+        io_information = {
             'train_dir': 'checkpoint',
             'data_dir': 'bin',
             'input_format': 'TFR',
@@ -51,14 +56,14 @@ class Test_TrainParams(unittest.TestCase):
             'trainable': '1:0:1:1'
         }
 
-        self.io_information = io_infomration
+        self.io_information = io_information
         self.training_parameters = training_parameters
         self.data_information = data_information
         self.default_network = default_network
 
         # fast helper to mock entire sections
         self.mock_io_information = partial(
-            section_mocker, section='IO_INFORMATION', options=io_infomration)
+            section_mocker, section='IO_INFORMATION', options=io_information)
         self.mock_training_parameters = partial(
             section_mocker,
             section='TRAINING_PARAMETERS',
@@ -93,7 +98,10 @@ class Test_TrainParams(unittest.TestCase):
                 mock_default_network(self)
 
         with mock.patch('configparser.ConfigParser', MockConfigParser):
-            *dummy, system_scaffold = parameter_file_parser('pippo')
+            # *dummy, system_scaffold = parameter_file_parser('pippo')
+            parameters = parameter_file_parser('pippo')
+            system_scaffold = scaffold_getter(parameters)
+
 
     def test_extraction_of_a_network(self):
         """
@@ -122,7 +130,8 @@ class Test_TrainParams(unittest.TestCase):
                 section_mocker(self, 'C', c)
 
         with mock.patch('configparser.ConfigParser', MockConfigParser):
-            *dummy, system_scaffold = parameter_file_parser('pippo')
+            parameters = parameter_file_parser('pippo')
+            system_scaffold = scaffold_getter(parameters)
         self.assertEqual(system_scaffold['C'].offset, 7)
         self.assertEqual(system_scaffold['C'].feature_size,
                          int(self.default_network['g_size']))
@@ -161,7 +170,8 @@ class Test_TrainParams(unittest.TestCase):
                 section_mocker(self, 'C', c)
 
         with mock.patch('configparser.ConfigParser', MockConfigParser):
-            *dummy, system_scaffold = parameter_file_parser('pippo')
+            parameters = parameter_file_parser('pippo')
+            system_scaffold = scaffold_getter(parameters)
         self.assertEqual(system_scaffold['C'].offset, 7)
         self.assertEqual(system_scaffold['C'].feature_size, int(c['g_size']))
         self.assertEqual(system_scaffold['H'].offset, 0)
@@ -198,7 +208,8 @@ class Test_TrainParams(unittest.TestCase):
                 section_mocker(self, 'C', c)
 
         with mock.patch('configparser.ConfigParser', MockConfigParser):
-            *dummy, system_scaffold = parameter_file_parser('pippo')
+            parameters = parameter_file_parser('pippo')
+            system_scaffold = scaffold_getter(parameters)
         # test layer 0
         for i, j in zip(system_scaffold['C'].layers_shaping[0],
                         [int(self.default_network['g_size']), 16]):
@@ -239,7 +250,8 @@ class Test_TrainParams(unittest.TestCase):
                 section_mocker(self, 'C', c)
 
         with mock.patch('configparser.ConfigParser', MockConfigParser):
-            *dummy, system_scaffold = parameter_file_parser('pippo')
+            parameters = parameter_file_parser('pippo')
+            system_scaffold = scaffold_getter(parameters)
         self.assertAlmostEqual(system_scaffold['C'].offset, 7)
         with self.assertRaises(NetworkNotAvailableError):
             dummy = system_scaffold['H']
@@ -265,8 +277,9 @@ class Test_TrainParams(unittest.TestCase):
                 section_mocker(self, 'C', c)
 
         with mock.patch('configparser.ConfigParser', MockConfigParser):
+            parameters = parameter_file_parser('pippo')
             with self.assertRaises(ValueError):
-                dummy = parameter_file_parser('pippo')
+                system_scaffold = scaffold_getter(parameters)
 
     def test_malformed_definition_of_a_network_2(self):
         """
@@ -293,9 +306,9 @@ class Test_TrainParams(unittest.TestCase):
                 section_mocker(self, 'C', c)
 
         with mock.patch('configparser.ConfigParser', MockConfigParser):
-            #with self.assertRaises(ShapeError):
+            parameters = parameter_file_parser('pippo')
             with self.assertRaises(TypeError):
-                dummy = parameter_file_parser('pippo')
+                system_scaffold = scaffold_getter(parameters)
 
     def test_extraction_of_a_network_and_load(self):
         """
@@ -334,7 +347,8 @@ class Test_TrainParams(unittest.TestCase):
 
         with mock.patch('configparser.ConfigParser', MockConfigParser):
             with mock.patch('numpy.load', mock_numpy_load):
-                *dummy, system_scaffold = parameter_file_parser('pippo')
+                parameters = parameter_file_parser('pippo')
+                system_scaffold = scaffold_getter(parameters)
         self.assertEqual(system_scaffold['C'].offset, 7)
         self.assertEqual(system_scaffold['H'].offset, 0)
 
@@ -374,7 +388,8 @@ class Test_TrainParams(unittest.TestCase):
 
         with mock.patch('configparser.ConfigParser', MockConfigParser):
             with mock.patch('numpy.load', mock_numpy_load):
-                *dummy, system_scaffold = parameter_file_parser('pippo')
+                parameters = parameter_file_parser('pippo')
+                system_scaffold = scaffold_getter(parameters)
 
         self.assertAlmostEqual(system_scaffold['C'].offset, 7)
         with self.assertRaises(NetworkNotAvailableError):

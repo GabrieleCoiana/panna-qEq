@@ -10,9 +10,14 @@ from copy import copy, deepcopy
 
 import numpy as np
 
-from lib.errors import ShapeError
-from neuralnet.a2affnetwork import A2affNetwork
-from neuralnet.layers import Layer
+if __package__ != 'panna':
+    from lib.errors import ShapeError
+    from neuralnet.a2affnetwork import A2affNetwork
+    from neuralnet.layers import Layer
+else:
+    from .lib.errors import ShapeError
+    from .neuralnet.a2affnetwork import A2affNetwork
+    from .neuralnet.layers import Layer
 
 
 class Test_A2affNetwork(unittest.TestCase):
@@ -113,7 +118,7 @@ class Test_A2affNetwork(unittest.TestCase):
 
     def test_compatible_setter(self):
         network = self.test_network
-        new_first_layer = Layer(self.layers_shaping[0], False, 0)
+        new_first_layer = Layer(self.layers_shaping[0], False, 0, 'test')
         network[0] = new_first_layer
         np.testing.assert_array_equal(network[0].wb_value,
                                       (np.empty(0), np.empty(0)))
@@ -122,7 +127,7 @@ class Test_A2affNetwork(unittest.TestCase):
         network = self.test_network
         correct_shape = self.layers_shaping[0]
         wrong_shape = (correct_shape[0] + 1, correct_shape[1] + 1)
-        new_first_layer = Layer(wrong_shape, False, 0)
+        new_first_layer = Layer(wrong_shape, False, 0, 'test')
         with self.assertRaises(ShapeError):
             network[0] = new_first_layer
 
@@ -346,12 +351,12 @@ class Test_A2affNetwork(unittest.TestCase):
         network = self.test_network
         features_vector = np.arange(32).reshape(2, 16)
         out = network.evaluate(features_vector)
-        self.assertEqual(out.shape, (2, 1))
+        self.assertEqual(out[0].shape, (2, 1))
 
         dfeatures_vector = np.arange(384).reshape(2, 16, 3 * 4)
-        out, dout = network.evaluate(features_vector, dfeatures_vector)
-        self.assertEqual(out.shape, (2, 1))
-        self.assertEqual(dout.shape, (2, 3 * 4))
+        out = network.evaluate(features_vector, dfeatures_vector)
+        self.assertEqual(out[0].shape, (2, 1))
+        self.assertEqual(out[1].shape, (2, 3 * 4))
 
 
 if __name__ == '__main__':

@@ -9,10 +9,15 @@ import os
 import shutil
 import unittest
 import numpy as np
+import sys
+import io
 
-from evaluate import main as evaluate
-
-from tests.utils import ROOT_FOLDER
+if __package__ != 'panna':
+    from evaluate import main as evaluate
+    from tests.utils import ROOT_FOLDER
+else:
+    from .evaluate import main as evaluate
+    from .tests.utils import ROOT_FOLDER
 
 
 class _DataContainer():
@@ -32,7 +37,7 @@ class Test_Evaluate(unittest.TestCase):
             pass
 
     def test_1(self):
-        """ Testing for training features
+        """ Testing evaluation from checkpoint
         """
         test_data_dir = ROOT_FOLDER + 'tests/test_eval_1'
         self.test_data_dir = test_data_dir
@@ -44,63 +49,36 @@ class Test_Evaluate(unittest.TestCase):
         os.makedirs(test_data_dir)
 
         os.chdir(test_data_dir)
-        os.symlink(self.cwd + '/tests/data/evaluation/test_1/evaluate_data',
+        os.symlink(self.cwd + '/tests/data/evaluation/evaluate_data',
                    'evaluate_data')
-        os.symlink(self.cwd + '/tests/data/evaluation/test_1/saved_networks',
-                   'saved_networks')
+        os.symlink(self.cwd + '/tests/data/evaluation/train',
+                   'train')
+        config_file = self.cwd + '/tests/data/evaluation/evaluate1.ini'
 
-        # buiding the input
-        io_parameters = _DataContainer()
-        io_parameters.data_dir = './evaluate_data'
-        io_parameters.train_dir = './train_output'
-        io_parameters.eval_dir = './evaluate_output'
-
-        io_parameters.example_format = 'TFR'
-
-        io_parameters.networks_format = 'PANNA'
-        io_parameters.networks_folder = './saved_networks'
-
-        io_parameters.number_of_process = 1
-
-        validation_parameters = _DataContainer()
-        validation_parameters.batch_size = -1
-        validation_parameters.single_step = True
-        validation_parameters.compute_forces = False
-
-        validation_parameters.step_number = None
-        validation_parameters.subsampling = None
-        validation_parameters.add_offset = False
-
-        parallel_param = _DataContainer()
-        parallel_param.number_of_process = 4
-
-        tfr_parameters = _DataContainer()
-        tfr_parameters.sparse_derivatives = False
-        tfr_parameters.g_size = 384
-
-        parameters = (io_parameters, parallel_param, validation_parameters,
-                      tfr_parameters)
-
-        # Run the evaluation
-        evaluate(parameters)
+        # Run the evaluation, suppressing output
+        suppress_text = io.StringIO()
+        sys.stdout = suppress_text
+        with unittest.mock.patch('sys.argv', ['program_name', '-c', config_file]):
+            evaluate()
+        sys.stdout = sys.__stdout__
 
         # Read the output
         outE = []
-        with open("./evaluate_output/energies.dat", "r") as f:
+        with open("./evaluate_output/0.dat", "r") as f:
             f.readline()
             for line in f:
                 line = line.split(' ')
                 outE.append(float(line[3]))
         # Checking against reference
-        # [values and threshold hardcoded for now... better ideas?]
-        refE = np.asarray([-9.037636215782056, -9.42446958788558])
+        refE = np.asarray([-2078.2035642660258, -2078.37483961411])
         np.testing.assert_allclose(np.asarray(outE), refE)
 
     def test_2(self):
-        """ Testing for training features
+        """ Testing evaluation from saved network
         """
-        test_data_dir = ROOT_FOLDER + './tests/test_eval_2'
+        test_data_dir = ROOT_FOLDER + 'tests/test_eval_2'
         self.test_data_dir = test_data_dir
+
         if os.path.isdir(test_data_dir):
             shutil.rmtree(os.path.join(self.cwd, self.test_data_dir),
                           ignore_errors=True)
@@ -108,58 +86,29 @@ class Test_Evaluate(unittest.TestCase):
         os.makedirs(test_data_dir)
 
         os.chdir(test_data_dir)
-        os.symlink(self.cwd + '/tests/data/evaluation/test_2/evaluate_data',
+        os.symlink(self.cwd + '/tests/data/evaluation/evaluate_data',
                    'evaluate_data')
-        os.symlink(self.cwd + '/tests/data/evaluation/test_2/saved_networks',
-                   'saved_networks')
+        os.symlink(self.cwd + '/tests/data/evaluation/saved_network',
+                   'saved_network')
+        config_file = self.cwd + '/tests/data/evaluation/evaluate2.ini'
 
-        # buiding the input
-        io_parameters = _DataContainer()
-        io_parameters.data_dir = './evaluate_data'
-        io_parameters.train_dir = './train_output'
-        io_parameters.eval_dir = './evaluate_output'
+        # Run the evaluation, suppressing output
+        suppress_text = io.StringIO()
+        sys.stdout = suppress_text
+        with unittest.mock.patch('sys.argv', ['program_name', '-c', config_file]):
+            evaluate()
+        sys.stdout = sys.__stdout__
 
-        io_parameters.example_format = 'TFR'
-
-        io_parameters.networks_format = 'PANNA'
-        io_parameters.networks_folder = './saved_networks'
-
-        io_parameters.number_of_process = 1
-
-        validation_parameters = _DataContainer()
-        validation_parameters.batch_size = -1
-        validation_parameters.single_step = True
-        validation_parameters.compute_forces = False
-
-        validation_parameters.step_number = None
-        validation_parameters.subsampling = None
-        validation_parameters.add_offset = False
-
-        parallel_param = _DataContainer()
-        parallel_param.number_of_process = 4
-
-        tfr_parameters = _DataContainer()
-        tfr_parameters.sparse_derivatives = False
-        tfr_parameters.g_size = 384
-        parameters = (io_parameters, parallel_param, validation_parameters,
-                      tfr_parameters)
-
-        # Run the evaluation
-        evaluate(parameters)
         # Read the output
         outE = []
-        with open("./evaluate_output/energies.dat", "r") as f:
+        with open("./evaluate_output/PANNA_scaffold.dat", "r") as f:
             f.readline()
             for line in f:
-                outE.append(float(line.split(' ')[3]))
-
-        refE = np.asarray([
-            -0.0036183453123613,
-            -0.4847124718749001,
-            0.1212132484374138,
-        ])
-        # this is a little too loose, why?
-        np.testing.assert_allclose(np.asarray(outE), refE, atol=1e-3)
+                line = line.split(' ')
+                outE.append(float(line[3]))
+        # Checking against reference
+        refE = np.asarray([-2078.2035642660258, -2078.37483961411])
+        np.testing.assert_allclose(np.asarray(outE), refE)
 
 
 if __name__ == '__main__':

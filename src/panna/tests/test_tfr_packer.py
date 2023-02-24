@@ -8,38 +8,21 @@
 import os
 import shutil
 import unittest
+import sys
+import io
 
 import numpy as np
 
-import gvector
-import tfr_packer
-
-from tests.utils import ROOT_FOLDER
+if __package__ != 'panna':
+    from tfr_packer import main as tfr_packer
+    from tests.utils import ROOT_FOLDER
+else:
+    from .tfr_packer import main as tfr_packer
+    from .tests.utils import ROOT_FOLDER
 
 
 class Test_Tft_Packer(unittest.TestCase):
     def setUp(self):
-        n_atoms = 10
-        g_size = 5
-
-        example_dict = {
-            'key':
-            'test_file.example',
-            'species':
-            np.arange(n_atoms).reshape(n_atoms),
-            'Gvect':
-            np.arange(n_atoms * g_size).reshape(n_atoms, g_size),
-            'dGvect':
-            np.arange(n_atoms * g_size * n_atoms * 3).reshape(
-                n_atoms, g_size, n_atoms * 3),
-            'forces':
-            np.arange(n_atoms * 3),
-            'per_atom_quantity':
-            np.arange(n_atoms),
-            'E':
-            n_atoms * (n_atoms + 1) / 2,
-        }
-        self.example = example_dict
         self.cwd = os.getcwd()
 
     def tearDown(self):
@@ -60,27 +43,20 @@ class Test_Tft_Packer(unittest.TestCase):
         os.makedirs(test_data_dir)
 
         os.chdir(test_data_dir)
-        # create the example
-        os.makedirs('bin')
-        gvector.write_routine.compute_binary(self.example, 'bin')
+        os.symlink(self.cwd + '/tests/data/tfr_packer/gvectors',
+                   'gvectors')
+        config_file = self.cwd + '/tests/data/tfr_packer/tfr.ini'
 
-        # compacting the data
-        tfrs_parameters = type(
-            'Tfrs', (object, ),
-            dict(in_path='bin',
-                 out_path='tfrs_w_d',
-                 elements_per_file=2,
-                 prefix='',
-                 num_species=4,
-                 derivatives=True,
-                 sparse_derivatives=False,
-                 per_atom_quantity=True))()
+        # Run the tfr_packer, suppressing output
+        suppress_text = io.StringIO()
+        sys.stdout = suppress_text 
+        with unittest.mock.patch('sys.argv', ['program_name', '-c', config_file]):
+            tfr_packer()
+        sys.stdout = sys.__stdout__
 
-        # packing with derivatives
-        tfr_packer.main(tfrs_parameters)
-
-        # TODO compute difference
-        # is this necessray? maybe
+        # Just checking for existence of the file
+        out = os.listdir('./tfr')
+        np.testing.assert_string_equal(out[0], 'test-1-1.tfrecord')
 
 
 if __name__ == '__main__':

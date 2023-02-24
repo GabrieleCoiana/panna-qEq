@@ -1,0 +1,154 @@
+{
+  "version": "v1",
+  "scaffold_type": "PANNA",
+  "networks_type": [
+    "a2ff",
+    "a2ff",
+    "a2ff",
+    "a2ff"
+  ],
+  "networks_species": [
+    "H",
+    "C",
+    "N",
+    "O"
+  ],
+  "networks": [
+    {
+      "feature_size": 384,
+      "layers": [
+        {
+          "wb_shape": [
+            384,
+            12
+          ],
+          "activation": 1,
+          "trainable": true,
+          "layer_name": "0"
+        },
+        {
+          "wb_shape": [
+            12,
+            6
+          ],
+          "activation": 1,
+          "trainable": true,
+          "layer_name": "1"
+        },
+        {
+          "wb_shape": [
+            6,
+            1
+          ],
+          "activation": 0,
+          "trainable": true,
+          "layer_name": "2"
+        }
+      ],
+      "name": "H",
+      "offset": -13.62
+    },
+    {
+      "feature_size": 384,
+      "layers": [
+        {
+          "wb_shape": [
+            384,
+            12
+          ],
+          "activation": 1,
+          "trainable": true,
+          "layer_name": "0"
+        },
+        {
+          "wb_shape": [
+            12,
+            6
+          ],
+          "activation": 1,
+          "trainable": true,
+          "layer_name": "1"
+        },
+        {
+          "wb_shape": [
+            6,
+            1
+          ],
+          "activation": 0,
+          "trainable": true,
+          "layer_name": "2"
+        }
+      ],
+      "name": "C",
+      "offset": -1029.41
+    },
+    {
+      "feature_size": 384,
+      "layers": [
+        {
+          "wb_shape": [
+            384,
+            12
+          ],
+          "activation": 1,
+          "trainable": true,
+          "layer_name": "0"
+        },
+        {
+          "wb_shape": [
+            12,
+            6
+          ],
+          "activation": 1,
+          "trainable": true,
+          "layer_name": "1"
+        },
+        {
+          "wb_shape": [
+            6,
+            1
+          ],
+          "activation": 0,
+          "trainable": true,
+          "layer_name": "2"
+        }
+      ],
+      "name": "N",
+      "offset": -1484.87
+    },
+    {
+      "feature_size": 384,
+      "layers": [
+        {
+          "wb_shape": [
+            384,
+            12
+          ],
+          "activation": 1,
+          "trainable": true,
+          "layer_name": "0"
+        },
+        {
+          "wb_shape": [
+            12,
+            6
+          ],
+          "activation": 1,
+          "trainable": true,
+          "layer_name": "1"
+        },
+        {
+          "wb_shape": [
+            6,
+            1
+          ],
+          "activation": 0,
+          "trainable": true,
+          "layer_name": "2"
+        }
+      ],
+      "name": "O",
+      "offset": -2041.84
+    }
+  ]
+}

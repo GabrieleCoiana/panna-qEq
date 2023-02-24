@@ -7,16 +7,22 @@
 ###########################################################################
 import configparser
 import unittest
-
 import numpy as np
 
-import lib.parser_callable as parser_callable
-from lib.errors import NetworkNotAvailableError
-from neuralnet.a2affnetwork import A2affNetwork
-from neuralnet.example import Example
-from neuralnet.panna_scaffold import PannaScaffold
-from tests.utils import section_mocker
-
+if __package__ != 'panna':
+    import lib.parser_callable as parser_callable
+    from lib.errors import NetworkNotAvailableError
+    from neuralnet.a2affnetwork import A2affNetwork
+    from neuralnet.example import Example
+    from neuralnet.panna_scaffold import PannaScaffold
+    from tests.utils import section_mocker
+else:
+    from .lib import parser_callable as parser_callable
+    from .lib.errors import NetworkNotAvailableError
+    from .neuralnet.a2affnetwork import A2affNetwork
+    from .neuralnet.example import Example
+    from .neuralnet.panna_scaffold import PannaScaffold
+    from .tests.utils import section_mocker
 
 class Test_PannaScaffold(unittest.TestCase):
     def setUp(self):
@@ -181,13 +187,14 @@ class Test_PannaScaffold(unittest.TestCase):
         # evaluate
         example = Example(
             np.arange(48).reshape(3, 16), np.arange(3), 0,
-            np.arange(432).reshape(3, 16, 3 * 3),
-            np.arange(9).reshape(3, 3))
+            d_g_available=True,
+            d_g_vectors=np.arange(432).reshape(3, 16, 3 * 3),
+            forces=np.arange(9).reshape(3, 3))
 
-        energy, forces = system_scaffold.evaluate(example, True)
+        output = system_scaffold.evaluate(example, True)
 
-        self.assertEqual(energy.shape, ())
-        self.assertEqual(forces.shape, (9, ))
+        self.assertEqual(output[0].shape, ())
+        self.assertEqual(output[1].shape, (9, ))
 
     def test_failed_evaluation_of_a_system(self):
         """

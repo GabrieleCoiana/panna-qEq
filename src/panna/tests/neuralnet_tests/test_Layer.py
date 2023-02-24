@@ -6,16 +6,23 @@
 # For further information on the license, see the LICENSE.txt file        #
 ###########################################################################
 import unittest
-
 import numpy as np
+import os
+import warnings
+# To silence TF logs
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import tensorflow as tf
 
-from neuralnet.layers import Layer
-from lib.errors import ShapeError
-
+if __package__ != 'panna':
+    from neuralnet.layers import Layer
+    from lib.errors import ShapeError
+else:
+    from .neuralnet.layers import Layer
+    from .lib.errors import ShapeError
 
 class Test_Layer(unittest.TestCase):
     def setUp(self):
+        warnings.simplefilter('ignore', category=DeprecationWarning)
         self.shape = (4, 5)
         self.wrong_shape = (4, 6)
         self.trainable = True
@@ -27,9 +34,12 @@ class Test_Layer(unittest.TestCase):
         self.w_w = np.arange(self.wrong_shape[0] * self.wrong_shape[1],
                              dtype=np.float32).reshape(*self.wrong_shape)
         self.b_w = np.arange(self.wrong_shape[1], dtype=np.float32)
-        self.empty_layer = Layer(self.shape, self.trainable, self.activation)
-        self.loaded_layer = Layer(self.shape, self.trainable, self.activation,
-                                  self.w_c, self.b_c)
+        self.empty_layer = Layer(self.shape, self.trainable, self.activation,
+                                 'empty')
+        self.loaded_layer = Layer(self.shape, self.trainable, 
+                                  self.activation, 'loaded')
+        self.loaded_layer.w_value = self.w_c
+        self.loaded_layer.b_value = self.b_c
 
     def test_layer_empty(self):
         # Testing basic Layer creation
@@ -47,12 +57,11 @@ class Test_Layer(unittest.TestCase):
 
     def test_inconsistent_layer_creation(self):
         # Testing Layer creation with wrong weights and bias
+        lay = Layer(self.shape, self.trainable, self.activation, 'test')
         with self.assertRaises(ShapeError):
-            Layer(self.shape, self.trainable, self.activation, self.w_w,
-                  self.b_c)
+            lay.w_value = self.w_w
         with self.assertRaises(ShapeError):
-            Layer(self.shape, self.trainable, self.activation, self.w_c,
-                  self.b_w)
+            lay.b_value = self.b_w
 
     def test_layer_consistent_wb_setter(self):
         # Testing Layer assignment with weights and bias
@@ -91,7 +100,7 @@ class Test_Layer(unittest.TestCase):
 
     def test_layer_activation_gaussian_shape(self):
         in_vectors = np.arange(40).reshape(10, 4)
-        din_vectors = np.arange(240).reshape(10, 3 * 2, 4)
+        din_vectors = np.arange(240).reshape(10, 3 * 2, 4) 
         self.loaded_layer.activation = 1
         out1, out2 = self.loaded_layer.evaluate(in_vectors, din_vectors)
         self.assertEqual(out1.shape, (in_vectors.shape[0], self.shape[1]))
@@ -121,7 +130,13 @@ class Test_Layer(unittest.TestCase):
         #    out2.shape,
         #    (din_vectors.shape[0], din_vectors.shape[1], self.shape[1]))
 
-    def test_consistency(self):
+    def test_layer_activation_tanh_shape(self):
+        in_vectors = np.arange(40).reshape(10, 4)
+        self.loaded_layer.activation = 4
+        out1 = self.loaded_layer.evaluate(in_vectors)
+        self.assertEqual(out1.shape, (in_vectors.shape[0], self.shape[1]))
+
+    def test_consistency(self):        
         in_vectors = np.arange(40, dtype=np.float32).reshape(10, 4)
         for act in range(4):
             graph = tf.Graph()
@@ -136,10 +151,8 @@ class Test_Layer(unittest.TestCase):
                 np.testing.assert_almost_equal(out1, out2)
 
     def test_layer_activation_noactivation_shape(self):
-        # yes, I won't let you add activation without testing
-        # pls also update test consistency routine :)
         in_vectors = np.arange(40).reshape(10, 4)
-        self.loaded_layer.activation = 4
+        self.loaded_layer.activation = 5
         with self.assertRaises(ValueError):
             self.loaded_layer.evaluate(in_vectors)
 

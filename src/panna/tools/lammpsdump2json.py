@@ -1,3 +1,10 @@
+###########################################################################
+# Copyright (c), The PANNAdevs group. All rights reserved.                #
+# This file is part of the PANNA code.                                    #
+#                                                                         #
+# The code is hosted on GitLab at https://gitlab.com/PANNAdevs/panna      #
+# For further information on the license, see the LICENSE.txt file        #
+###########################################################################
 """ convert a lammps dump to json format, not granted to work with any dump
 at the moment
 assumptions : units are metal
@@ -208,12 +215,12 @@ class Pos():
         if self._forces is not None:
             for atom_id, (pos, force) in enumerate(
                     zip(self._pos, self._forces)):
-                typ = 'Si'
+                typ = 'C'
                 atomic_pos.append((int(atom_id), typ, pos.tolist(),
                                    force.tolist()))
         else:
             for atom_id, pos in enumerate(self._pos):
-                typ = 'Si'
+                typ = 'C'
                 atomic_pos.append((int(atom_id), typ, pos.tolist()))
         if self._per_atom_energy is not None:
             system_info['per_atom_energy'] = self._per_atom_energy.tolist()

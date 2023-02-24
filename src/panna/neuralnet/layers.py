@@ -56,6 +56,7 @@ class Layer():
         Tensor with biases value, shape must be
         if not provided the layer can not be evaluated and it will be
         randomly initialized if required in TF
+
     """
 
     _wb_file_name = 'layer_{}'  #: string used when dumping/loading
@@ -268,8 +269,8 @@ class Layer():
                                   biases_init,
                                   trainable=self.trainable)
 
-        tf.add_to_collection(ops.GraphKeys.WEIGHTS, weights)
-        tf.add_to_collection(ops.GraphKeys.BIASES, biases)
+        tf.compat.v1.add_to_collection(ops.GraphKeys.WEIGHTS, weights)
+        tf.compat.v1.add_to_collection(ops.GraphKeys.BIASES, biases)
 
         if self.activation == 1:  # gaussian
             w_contrib = tf.matmul(in_tensor, weights, name='w_contrib') + biases
@@ -346,17 +347,20 @@ class Layer():
         return json_data, wb
 
     @classmethod
-    def from_json(cls, json_data, base_path=None):
+    def from_json(cls, json_data, base_path=None, wfiles=True):
         """
         Parameters
         ----------
           json_data: dumped json
           base_path: a path to search fro the weights and the biases
+          wfiles: bool
+            wether the weights should be loaded from npy files
         """
         layer_name = json_data['layer_name']
 
         if base_path:
-            base_path = os.path.join(base_path, cls._wb_file_name.format(layer_name))
+            # base_path = os.path.join(base_path, cls._wb_file_name.format(layer_name))
+            base_path = base_path+'_'+cls._wb_file_name.format(layer_name)
         else:
             base_path = cls._wb_file_name.format(layer_name)
 
@@ -365,13 +369,18 @@ class Layer():
                     trainable=json_data['trainable'],
                     activation=json_data['activation'],
                     name=layer_name)
-        path = base_path + '_weights_{}x{}.npy'.format(*wb_shape)
-        # np load does not support path objects
-        if os.path.isfile(path):
-            logger.info(f'loading {path}')
-            layer.w_value = np.load(str(path))
-        path = base_path + '_biases_{}.npy'.format(wb_shape[1])
-        if os.path.isfile(path):
-            logger.info(f'loading {path}')
-            layer.b_value = np.load(str(path))
+        if wfiles:
+            path = base_path + '_weights_{}x{}.npy'.format(*wb_shape)
+            # np load does not support path objects
+            if os.path.isfile(path):
+                logger.info(f'loading {path}')
+                layer.w_value = np.load(str(path))
+            else:
+                raise ValueError('Weights file not found: {}'.format(str(path)))
+            path = base_path + '_biases_{}.npy'.format(wb_shape[1])
+            if os.path.isfile(path):
+                logger.info(f'loading {path}')
+                layer.b_value = np.load(str(path))
+            else:
+                raise ValueError('Biases file not found: {}'.format(str(path)))
         return layer

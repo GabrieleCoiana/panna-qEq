@@ -428,7 +428,7 @@ class PannaScaffold(ScaffoldBasic):
                 # TODO: this can be moved deep to the layer object
                 np.save(os.path.join(folder, name), array)
 
-    def _load_dump(self, folder):
+    def _load_dump(self, folder, wfiles=True):
         """method to serialize the class
         """
         with open(os.path.join(folder, 'networks_metadata.json')) as f:
@@ -440,7 +440,7 @@ class PannaScaffold(ScaffoldBasic):
                                        metadata['networks_species'],
                                        metadata['networks']):
             if n_type == 'a2ff':
-                network = A2affNetwork.from_json(n, folder + '/')
+                network = A2affNetwork.from_json(n, folder + '/', wfiles=wfiles)
                 self[n_specie] = network
                 for layer in network:
                     w, b = layer.wb_value
@@ -452,9 +452,9 @@ class PannaScaffold(ScaffoldBasic):
                 raise ValueError('Unknown network type')
 
     @classmethod
-    def load_dump(cls, folder, **kwargs):
+    def load_dump(cls, folder, wfiles=True, **kwargs):
         new_scaffold = cls(**kwargs)
-        new_scaffold._load_dump(folder)
+        new_scaffold._load_dump(folder, wfiles=wfiles)
         return new_scaffold
 
     def evaluate(self, example, forces_flag=False, **kwargs):

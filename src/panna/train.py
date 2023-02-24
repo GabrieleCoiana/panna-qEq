@@ -294,6 +294,8 @@ def train(flags, config, system_scaffold, cluster, task_index):
                 # infinite loop, only hooks act here
                 while not mon_sess.should_stop():
                     mon_sess.run(train_op)
+                chief_hooks[-1]._writer.close()
+                chief_hooks[-1]._writer2.close()
 
 
 def main():

@@ -134,7 +134,6 @@ def load_networks(nets_dir, nets_format, format_options=None):
 
         # load ckpts
         ckpts = [net.Checkpoint(nets_dir, ck_step) for ck_step in ck_steps]
-        #logger.debug('EK checkpoints available: %d' ,len(ckpts))
         # extract scaffols
         scaffolds = []
         for ckpt in ckpts:

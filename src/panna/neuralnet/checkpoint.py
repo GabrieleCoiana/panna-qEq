@@ -101,8 +101,10 @@ class Checkpoint(object):
         """
         for name, shape in self._reader.get_variable_to_shape_map().items():
             logger.debug('available variables: %s ---- %s', name, str(shape))
-
-        scaffold = self._Scaffold.load_dump(self._in_dir, name=str(self._step_number))
+	
+        scaffold = self._Scaffold.load_dump(self._in_dir, 
+                                            name=str(self._step_number),
+                                            wfiles=False)
         _tf_ckpt_search('', scaffold, self._reader)
         usable = True
         for net in scaffold:

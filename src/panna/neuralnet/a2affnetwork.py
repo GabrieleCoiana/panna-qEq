@@ -547,7 +547,7 @@ class A2affNetwork():
         return json_data, wbs
 
     @classmethod
-    def from_json(cls, json_data, base_path=''):
+    def from_json(cls, json_data, base_path='', wfiles=True):
         """ Load the network from a dump.
 
         Parameters
@@ -556,6 +556,8 @@ class A2affNetwork():
             json serialization of the class.
         base_path: string or path object
             a path to search for weights and biases numpy files
+        wfiles: bool
+            wether the weights should be loaded from npy files
 
         Returns
         -------
@@ -568,7 +570,8 @@ class A2affNetwork():
         base_path = os.path.join(base_path, cls._wb_prefix.format(name))
 
         if 'norm_layer' in json_data:
-            norm_layer = Layer.from_json(json_data['norm_layer'], base_path)
+            norm_layer = Layer.from_json(json_data['norm_layer'], base_path,
+                                         wfiles=wfiles)
         else:
             norm_layer = None
 
@@ -581,7 +584,8 @@ class A2affNetwork():
         # initialize the layers loading the from files
         real_layers = []
         for layer_json in layers_json:
-            real_layers.append(Layer.from_json(layer_json, base_path))
+            real_layers.append(Layer.from_json(layer_json, base_path,
+                                               wfiles=wfiles))
 
         # substitue the network, calling a customize should be better
         # but this op should be safe enough

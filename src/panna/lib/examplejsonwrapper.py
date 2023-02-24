@@ -75,7 +75,7 @@ class ExampleJsonWrapper():
         """
         lattice_vectors = self._example.get('lattice_vectors',
                                             np.zeros(9).reshape(3, 3))
-        return np.asarray(lattice_vectors).astype(np.float)
+        return np.asarray(lattice_vectors).astype(float)
 
     @property
     def angstrom_lattice_vectors(self):
@@ -118,12 +118,12 @@ class ExampleJsonWrapper():
         for atom in self._example['atoms']:
 
             if self.atomic_position_unit == 'cartesian':
-                pos.append(np.asarray(atom[2]).astype(np.float))
+                pos.append(np.asarray(atom[2]).astype(float))
 
             elif self.atomic_position_unit == 'crystal':
                 pos.append(
                     np.dot(np.transpose(self.lattice_vectors),
-                           np.asarray(atom[2]).astype(np.float)))
+                           np.asarray(atom[2]).astype(float)))
             else:
                 raise ValueError('atomic_position_unit unknown')
         return np.asarray(pos)
@@ -140,7 +140,7 @@ class ExampleJsonWrapper():
         forces = []
         for atom in self._example['atoms']:
             try:
-                force = np.asarray(atom[3]).astype(np.float) * energy_to_ev(
+                force = np.asarray(atom[3]).astype(float) * energy_to_ev(
                     self.unit_of_energy) / distances_to_angstrom(self.unit_of_length)
                 forces.append(force)
             except IndexError:
@@ -175,7 +175,7 @@ class ExampleJsonWrapper():
         energy = self._example['energy'][0]
         if isinstance(energy, str):
             energy = energy.strip('\"')
-        return np.float(energy)
+        return float(energy)
 
     @property
     def per_atom_energy(self):
@@ -186,7 +186,7 @@ class ExampleJsonWrapper():
             pa_energy = self._example['per_atom_energy']
         except KeyError:
             raise ValueError('per atom energy not available')
-        return np.asarray(pa_energy, dtype=np.float)
+        return np.asarray(pa_energy, dtype=float)
 
     @property
     def ev_energy(self):
@@ -340,7 +340,7 @@ class ExampleJsonWrapper():
             tmp = 'K_POINTS automatic\n {} 1 1 1'
             n_kpoints = np.round(
                 kpoints_density
-                / np.linalg.norm(self.angstrom_lattice_vectors, axis=1)).astype(np.int)
+                / np.linalg.norm(self.angstrom_lattice_vectors, axis=1)).astype(int)
             tmp = tmp.format(' '.join(n_kpoints.astype(str)))
             qe_dict['K_POINTS'] = Template(tmp)
         elif kpoints_grid:

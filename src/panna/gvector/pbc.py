@@ -76,7 +76,7 @@ def replicas_max_idx(lattice_vectors, Rc, pbc=[True, True, True]):
 
     lattice_vector_lengths = np.linalg.norm(_lattice_vectors, axis=1)
     lattice_vector_lengths_bool = lattice_vector_lengths > 1e-6
-    max_indices = np.zeros(3, dtype=np.int)
+    max_indices = np.zeros(3, dtype=int)
     if not lattice_vector_lengths_bool.any():
         return max_indices
 

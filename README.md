@@ -29,19 +29,37 @@ Simple tests to check functionality can be run with:
     python3 -m unittest
 ``` 
 
-from within the panna directory. 
+from within the src/panna directory. 
 This command runs the tests for the following scripts in various conditions
 
 ```
-    ./panna/gvect_calculator.py 
-    ./panna/tfr_packer.py 
-    ./panna/train.py
-    ./panna/evaluate.py 
+    gvect_calculator.py 
+    tfr_packer.py 
+    train.py
+    evaluate.py 
 ```    
 
+#### Installation:
 
-PANNA potentials can be used in several MD packages via KIM project [3] model driver:
-MD_805652781592_000
+PANNA scripts can be run without installation from the panna directory.
+Alternatively, PANNA can be installed through package managers such as pip, e.g.
+```
+    pip install .
+```
+from the root package directory.
+
+
+#### Tools and interfaces
+
+PANNA comes with several tool to parse and process data.
+Tools can be found in the `src/panna/tools` directory, and are described in the relative tutorial:
+```
+   https://pannadevs.gitlab.io/pannadoc/tutorials/Tools.html
+```
+
+PANNA potentials can be used to run MD in lammps through the plugin found in `src/panna/interfaces/lammps`.
+
+Alternatively, PANNA can interface with several MD packages via KIM project [3] model driver: MD_805652781592_000.
 
 
 #### REFERENCES

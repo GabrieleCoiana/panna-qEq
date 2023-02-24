@@ -1,7 +1,10 @@
 # PANNA
 ## Properties from Artificial Neural Network Architectures
 
-> See the included work-in-progress **tutorial** to have a walkthrough of PANNA.
+> See the included work-in-progress **tutorial** to have a walkthrough of PANNA, 
+> the tutorial can be run from command line, or through jupyter notebooks.
+> 
+> A version of the documentation and tutorial is also available at `https://pannadevs.gitlab.io/pannadoc`.
 
 
 PANNA is a package for training and validating neural networks to represent atomic potentials. 
@@ -43,26 +46,14 @@ In summary, PANNA is an easy-to-use interface for obtaining neural network model
  leveraging the highly optimized TensorFlow infrastructure to provide an efficient and parallelized, 
 GPU-accelerated training. 
 
-In this first pre-release version, a sample input of atomic positions and energies is provided [3], 
-allowing users to explore different network geometries and accustom themselves with the very non-linear training procedure. 
-In this version the loss function is quadratic with the error between neural network and reference value.
-Penalty proportional to L1- and L2-norms can be added optionally. Adam optimizer is used throughout the tutorial.
+The complete toolchain allows the user to utilize Quantum Espresso data files for training and
+deploy the final neural network as a LAMMPS potential for further simulations.
 
-In future releases
-the complete toolchain will be released where the user can utilize Quantum Espresso data files for 
-training and s/he can deploy the final neural network as a LAMMPS potential for further simulations.
-
-See the included work-in-progress **tutorial** to have a walkthrough of PANNA.
-
-For an automatically generated, work-in-progress source code documentation,
-go to *doc/sphinx-rltd/build/html* and open the *index.html* file with your browser.
-or view the *WIP-API.pdf* which is a link to *doc/sphinx-rltd/build/latex/panna.pdf*.
-
-If you have any questions you can write to 
-  * panna google groups 
+If you have any questions you can write to
+  * panna google groups
 https://groups.google.com/d/forum/pannausers
   * pannadevelopers@gmail.com
-  * kucukben@gmail.com (if you use this last option please add [pannadevs] 
+  * kucukben@gmail.com (if you use this last option please add [pannadevs]
 with the square brackets to your subject line)
 
 
@@ -74,7 +65,3 @@ REFERENCES
     [2] Justin S. Smith, Olexandr Isayev, Adrian E. Roitberg.
     ANI-1: An extensible neural network potential with DFT accuracy
     at force field computational cost. Chemical Science,(2017), DOI: 10.1039/C6SC05720A
-    [3] Justin S. Smith, Olexandr Isayev, Adrian E. Roitberg.
-    ANI-1, A data set of 20 million calculated off-equilibrium conformations
-    for organic molecules. Scientific Data, 4 (2017), Article number: 170193,
-    DOI: 10.1038/sdata.2017.193

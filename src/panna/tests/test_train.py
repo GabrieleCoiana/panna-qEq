@@ -13,15 +13,11 @@ import unittest
 import numpy as np
 import sys
 import io
+import logging
+logging.getLogger('panna').setLevel(logging.ERROR)
 
-
-if __package__ != 'panna':
-    from train import main as train
-    from tests.utils import ROOT_FOLDER
-else:
-    from .train import main as train
-    from .tests.utils import ROOT_FOLDER
-
+from panna.train import main as train
+from panna.tests.utils import ROOT_FOLDER
 
 class Test_train(unittest.TestCase):
     def setUp(self):
@@ -60,18 +56,17 @@ class Test_train(unittest.TestCase):
         sys.stdout = sys.__stdout__
 
         # Read the output
-        outE = []
-        with open("./delta_e.dat") as f:
-            for Es in f:
-                tmp = [float(x) for x in Es.split()]
-                tmp.sort()
-                outE.append(np.asarray(tmp))
+        out = []
+        with open("./metrics.dat") as f:
+            for o in f.readlines()[1:]:
+                out.append(float(o.split()[1]))
         # Checking against reference
         # values and threshold hardcoded for now
-        # 1e-5 allows for small GPU/CPU inconsistencies
-        refE_0 = np.asarray([-0.08596611, 0.13045311])
-        np.testing.assert_allclose(outE[0], refE_0, atol=1e-5)
-        np.testing.assert_allclose(outE[-1], np.zeros(2), atol=1e-5)
+        # 1e-4 allows for small GPU/CPU inconsistencies
+        # print(out)
+        ref = np.asarray([0.0012613933067768812, 0.0, 8.138021075865254e-05, \
+                           0.0, 8.138021075865254e-05])
+        np.testing.assert_allclose(out, ref, atol=1e-4)
 
 
     def test_2(self):
@@ -99,18 +94,17 @@ class Test_train(unittest.TestCase):
         sys.stdout = sys.__stdout__
 
         # Read the output
-        outE = []
-        with open("./delta_e.dat") as f:
-            for Es in f:
-                tmp = [float(x) for x in Es.split()]
-                tmp.sort()
-                outE.append(np.asarray(tmp))
+        out = []
+        with open("./train/metrics.dat") as f:
+            for o in f.readlines()[1:]:
+                out.append(float(o.split()[1]))
         # Checking against reference
         # values and threshold hardcoded for now
-        # 1e-5 allows for small GPU/CPU inconsistencies
-        refE_0 = np.asarray([-0.08596611, 0.13045311])
-        np.testing.assert_allclose(outE[0], refE_0, atol=1e-5)
-        np.testing.assert_allclose(outE[-1], np.zeros(2), atol=1e-5)
+        # 1e-4 allows for small GPU/CPU inconsistencies
+        # print(out)
+        ref = np.asarray([0.4349365234375, 0.296142578125, 0.1971435546875, \
+                          0.1262613981962204, 0.0771891325712204])
+        np.testing.assert_allclose(out, ref, atol=1e-4)
 
 
 if __name__ == '__main__':

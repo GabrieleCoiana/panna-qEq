@@ -30,8 +30,8 @@ Currently the allowed architecture is a deep neural network of fully connected l
 starting from the input feature vector and going through one or more *hidden layers*. 
 The user can determine to train or freeze any layer, s/he can also transfer network parameters between species upon restart.
 
-In the present implementation, the network layers are connected with gaussian activation. 
-As an example, node `j` of layer `i` will depend on the values of the nodes `k` of layer `i-1` as:
+In the present implementation, the network layers are connected through a linear operation plus a nonlinear activation function. 
+As an example, with the default Gaussian activation, node `j` of layer `i` will depend on the values of the nodes `k` of layer `i-1` as:
 ```
 l[i,j] = Exp[ -(Sum_k (w[i,j,k]*l[i-1,k]) + b[i,j])^2 ],
 ```

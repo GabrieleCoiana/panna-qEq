@@ -16,13 +16,13 @@
 #include "force.h"
 #include "neighbor.h"
 #include "neigh_list.h"
-#include "neigh_request.h"
 #include "update.h"
 #include "integrate.h"
 #include "respa.h"
 #include "math_const.h"
 #include "memory.h"
 #include "error.h"
+#include "group.h"
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -32,6 +32,24 @@ using namespace LAMMPS_NS;
 using namespace MathConst;
 
 /* ---------------------------------------------------------------------- */
+// Helper funcion for fast integer power
+double ipow(double b, int e){
+    double r = 1.0;
+    while (e>0){
+        if (e & 1) r *= b;
+        e >>= 1;
+        b *= b;
+    }
+    return r;
+}
+
+// Helper function for matrix multiplication
+void matmul(double* __restrict__ a, const double* b, const double* c, int iM, int jM, int kM){
+  for(int i=0; i<iM; i++)
+    for(int k=0; k<kM; k++)
+      for(int j=0;j<jM; j++)
+        a[i*jM+j] += b[i*kM+k]*c[k*jM+j];
+}
 
 
 // ########################################################
@@ -42,7 +60,7 @@ using namespace MathConst;
 PairPANNA::PairPANNA(LAMMPS *lmp) : Pair(lmp)
 {
   writedata = 1;
-  // feenableexcept(FE_INVALID | FE_OVERFLOW);
+  single_enable = 0;
 }
 
 // ########################################################
@@ -65,80 +83,54 @@ PairPANNA::~PairPANNA()
 // ########################################################
 // ########################################################
 
-// Radial gvect contribution (and derivative part)
-double PairPANNA::Gradial_d(double rdiff, int indr, double *dtmp){
-  double cent = rdiff - par.Rsi_rad[indr];
-  double gauss = exp( - par.eta_rad[indr] * cent * cent);
-  double fc = 0.5 * ( 1.0 + cos(rdiff * par.iRc_rad) );
-  *dtmp = ( par.iRc_rad_half * sin(rdiff * par.iRc_rad) +
-         par.twoeta_rad[indr] * fc * cent ) * gauss / rdiff;
-  return gauss * fc;
-}
-
-// Angular gvect contribution (and derivative part)
-double PairPANNA::Gangular_d(double rdiff1, double rdiff2, double cosijk, int Rsi, int Thi, double* dtmp){
-  if(cosijk> 0.999999999) cosijk =  0.999999999;
-  if(cosijk<-0.999999999) cosijk = -0.999999999;
-  double epscorr = 0.001;
-  double sinijk = sqrt(1.0 - cosijk*cosijk + epscorr * pow(par.Thi_sin[Thi], 2) );
-  double iRij = 1.0/rdiff1;
-  double iRik = 1.0/rdiff2;
-  double Rcent = 0.5 * (rdiff1 + rdiff2) - par.Rsi_ang[Rsi];
-  double fcrad = 0.5 * ( 1.0 + par.Thi_cos[Thi] * cosijk + par.Thi_sin[Thi] * sinijk );
-  double fcij = 0.5 * ( 1.0 + cos(rdiff1 * par.iRc_ang) );
-  double fcik = 0.5 * ( 1.0 + cos(rdiff2 * par.iRc_ang) );
-  double mod_norm = pow( 0.5 * (1.0 + sqrt(1.0 + epscorr * pow(par.Thi_sin[Thi], 2) ) ), par.zeta[Thi]);
-  double fact0 = 2.0 * exp( - par.eta_ang[Rsi] * Rcent * Rcent) * pow(fcrad, par.zeta[Thi]-1) / mod_norm;
-  double fact1 = fact0 * fcij * fcik;
-  double fact2 = par.zeta_half[Thi] * fact1 * ( par.Thi_cos[Thi] - par.Thi_sin[Thi] * cosijk / sinijk );
-  double fact3 = par.iRc_ang_half * fact0 * fcrad;
-  double G = fact1 * fcrad;
-  dtmp[0] = -iRij * ( par.eta_ang[Rsi] * Rcent * G
-            + fact2 * cosijk * iRij
-            + fact3 * fcik * sin(rdiff1 * par.iRc_ang) );
-  dtmp[1] = fact2 * iRij * iRik;
-  dtmp[2] = -iRik * ( par.eta_ang[Rsi] * Rcent * G
-            + fact2 * cosijk * iRik
-            + fact3 * fcij * sin(rdiff2 * par.iRc_ang) );
-  return G;
-}
-
 // Function computing gvect and its derivative
 void PairPANNA::compute_gvect(int ind1, double **x, int* type,
                               int* neighs, int num_neigh,
                               double *G, double* dGdx){
-  float posx = x[ind1][0];
-  float posy = x[ind1][1];
-  float posz = x[ind1][2];
+  const double epscorr = 0.001;
+  double posx = x[ind1][0];
+  double posy = x[ind1][1];
+  double posz = x[ind1][2];
   // Elements to store neigh list for angular part
   // We allocate max possible size, so we don't need to reallocate
   int nan = 0;
-  int ang_neigh[num_neigh];
-  int ang_type[num_neigh];
-  double dists[num_neigh];
-  double diffx[num_neigh];
-  double diffy[num_neigh];
-  double diffz[num_neigh];
-  //
+  int ang_neigh[num_neigh], ang_type[num_neigh];
+  double dists[num_neigh], diffx[num_neigh], diffy[num_neigh], diffz[num_neigh];
+  double iRij[num_neigh], fcij[num_neigh], sindij[num_neigh];
+  // Other variables to be reused in loops
+  double dx, dy, dz, Rij, coeff, cent, gauss, fc, dgp, derx, dery, derz;
+  double cos_ijk, fact0, fact1, fact2, fact3, Gterm, dg0, dg1, dg2;
+  double dgdxj, dgdyj, dgdzj, dgdxk, dgdyk, dgdzk;
+  double Rcent[par.RsN_ang], Rexp[par.RsN_ang];
+  double sin_ijk[par.ThetasN], fcrad[par.ThetasN], mod_norm[par.ThetasN], rad_mod[par.ThetasN];
+  int nind, indsh, indsh2, indsh3;
+
   // Loop on neighbours, compute radial part, store quantities for angular
   for(int n=0; n<num_neigh; n++){
-    int nind = neighs[n];
-    double dx = x[nind][0]-posx;
-    double dy = x[nind][1]-posy;
-    double dz = x[nind][2]-posz;
-    double Rij = sqrt(dx*dx+dy*dy+dz*dz);
-    if (Rij < par.Rc_rad){
-      // Add all radial parts
-      int indsh = (type[nind]-1)*par.RsN_rad;
+    nind = neighs[n];
+    dx = x[nind][0]-posx;
+    dy = x[nind][1]-posy;
+    dz = x[nind][2]-posz;
+    Rij = sqrt(dx*dx+dy*dy+dz*dz);
+    indsh = (type[nind]-1)*par.RsN_rad;
+    //Exclude atoms that are not present in the default group all
+    //This is mostly needed for GCMC
+    int igroup = group->find("all");
+    int groupbit = group->bitmask[igroup];
+
+    if (Rij < par.Rc_rad and atom->mask[nind] & groupbit){
+
       for(int indr=0; indr<par.RsN_rad; indr++){
-        double dtmp;
-        // Getting the simple G and derivative part
-        G[indsh+indr] += Gradial_d(Rij, indr, &dtmp);
-        // Filling all derivatives
-        int indsh2 = (indsh+indr)*(num_neigh+1)*3;
-        double derx = dtmp*dx;
-        double dery = dtmp*dy;
-        double derz = dtmp*dz;
+        cent = Rij - par.Rsi_rad[indr];
+        gauss = exp( - par.eta_rad[indr] * cent * cent);
+        fc = 0.5 * ( 1.0 + cos(Rij * par.iRc_rad) );
+        dgp = ( par.iRc_rad_half * sin(Rij * par.iRc_rad) +
+                par.twoeta_rad[indr] * fc * cent ) * gauss / Rij;
+        G[indsh+indr] += gauss * fc;
+        indsh2 = (indsh+indr)*(num_neigh+1)*3;
+        derx = dgp*dx;
+        dery = dgp*dy;
+        derz = dgp*dz;
         dGdx[indsh2 + num_neigh*3     ] += derx;
         dGdx[indsh2 + num_neigh*3 + 1 ] += dery;
         dGdx[indsh2 + num_neigh*3 + 2 ] += derz;
@@ -148,13 +140,16 @@ void PairPANNA::compute_gvect(int ind1, double **x, int* type,
       }
     }
     // If within radial cutoff, store quantities
-    if (Rij < par.Rc_ang){
+    if (Rij < par.Rc_ang and atom->mask[nind] & groupbit){
       ang_neigh[nan] = n;
       ang_type[nan] = type[nind];
       dists[nan] = Rij;
       diffx[nan] = dx;
       diffy[nan] = dy;
       diffz[nan] = dz;
+      iRij[nan] = 1.0/Rij;
+      fcij[nan] = 0.5 * ( 1.0 + cos(Rij * par.iRc_ang) );
+      sindij[nan] = sin(Rij * par.iRc_ang);
       nan++;
     }
   }
@@ -163,26 +158,52 @@ void PairPANNA::compute_gvect(int ind1, double **x, int* type,
   for(int n=0; n<nan-1; n++){
     for(int m=n+1; m<nan; m++){
       // Compute cosine
-      double cos_ijk = (diffx[n]*diffx[m] + diffy[n]*diffy[m] + diffz[n]*diffz[m]) /
-                       (dists[n]*dists[m]);
+      cos_ijk = (diffx[n]*diffx[m] + diffy[n]*diffy[m] + diffz[n]*diffz[m])*(iRij[n]*iRij[m]);
+      // Clamping for numerical stability
+      cos_ijk = std::max(-0.999999999, std::min(cos_ijk, 0.999999999));
       // Gvect shift due to species
-      int indsh = par.typsh[ang_type[n]-1][ang_type[m]-1];
+      indsh = par.typsh[ang_type[n]-1][ang_type[m]-1];
+      // Loop over radial and angular separately to get independent terms
+      for(int Rsi=0; Rsi<par.RsN_ang; Rsi++){
+        Rcent[Rsi] = 0.5 * (dists[n] + dists[m]) - par.Rsi_ang[Rsi];
+        Rexp[Rsi] = 2.0 * exp( - par.eta_ang[Rsi] * Rcent[Rsi] * Rcent[Rsi]);
+      }
+      for(int Thi=0; Thi<par.ThetasN; Thi++){
+        sin_ijk[Thi] = sqrt(1.0 - cos_ijk * cos_ijk + 
+                           epscorr * par.Thi_sin[Thi] * par.Thi_sin[Thi]);
+        fcrad[Thi] = 0.5 * ( 1.0 + par.Thi_cos[Thi] * cos_ijk + par.Thi_sin[Thi] * sin_ijk[Thi] );
+        mod_norm[Thi] = ipow( 0.5 * (1.0 + sqrt(1.0 + epscorr * par.Thi_sin[Thi] * par.Thi_sin[Thi] ) ), 
+                        par.zeta[Thi]);
+        rad_mod[Thi] = ipow(fcrad[Thi], par.zeta[Thi]-1) / mod_norm[Thi];
+      }
       // Loop over all bins
       for(int Rsi=0; Rsi<par.RsN_ang; Rsi++){
         for(int Thi=0; Thi<par.ThetasN; Thi++){
-          double dtmp[3];
-          int indsh2 = Rsi * par.ThetasN + Thi;
-          // Adding the G part and computing derivative
-          G[indsh+indsh2] += Gangular_d(dists[n], dists[m], cos_ijk, Rsi, Thi, dtmp);
+          indsh2 = Rsi * par.ThetasN + Thi;
+          fact0 = Rexp[Rsi] * rad_mod[Thi];
+          fact1 = fact0 * fcij[n] * fcij[m];
+          fact2 = par.zeta_half[Thi] * fact1 * ( par.Thi_cos[Thi] - par.Thi_sin[Thi] * 
+                               cos_ijk / sin_ijk[Thi] );
+          fact3 = par.iRc_ang_half * fact0 * fcrad[Thi];
+          Gterm = fact1 * fcrad[Thi];
+          // Filling G contribution
+          G[indsh+indsh2] += Gterm;
+          dg0 = -iRij[n] * ( par.eta_ang[Rsi] * Rcent[Rsi] * Gterm
+                    + fact2 * cos_ijk * iRij[n]
+                    + fact3 * fcij[m] * sindij[n] );
+          dg1 = fact2 * iRij[n] * iRij[m];
+          dg2 = -iRij[m] * ( par.eta_ang[Rsi] * Rcent[Rsi] * Gterm
+                    + fact2 * cos_ijk * iRij[m]
+                    + fact3 * fcij[n] * sindij[m] );
           // Computing the derivative contributions
-          double dgdxj = dtmp[0]*diffx[n] + dtmp[1]*diffx[m];
-          double dgdyj = dtmp[0]*diffy[n] + dtmp[1]*diffy[m];
-          double dgdzj = dtmp[0]*diffz[n] + dtmp[1]*diffz[m];
-          double dgdxk = dtmp[1]*diffx[n] + dtmp[2]*diffx[m];
-          double dgdyk = dtmp[1]*diffy[n] + dtmp[2]*diffy[m];
-          double dgdzk = dtmp[1]*diffz[n] + dtmp[2]*diffz[m];
+          dgdxj = dg0*diffx[n] + dg1*diffx[m];
+          dgdyj = dg0*diffy[n] + dg1*diffy[m];
+          dgdzj = dg0*diffz[n] + dg1*diffz[m];
+          dgdxk = dg1*diffx[n] + dg2*diffx[m];
+          dgdyk = dg1*diffy[n] + dg2*diffy[m];
+          dgdzk = dg1*diffz[n] + dg2*diffz[m];
           // Filling all the interested terms
-          int indsh3 = (indsh+indsh2)*(num_neigh+1)*3;
+          indsh3 = (indsh+indsh2)*(num_neigh+1)*3;
           dGdx[indsh3 + ang_neigh[n]*3     ] += dgdxj;
           dGdx[indsh3 + ang_neigh[n]*3 + 1 ] += dgdyj;
           dGdx[indsh3 + ang_neigh[n]*3 + 2 ] += dgdzj;
@@ -200,23 +221,13 @@ void PairPANNA::compute_gvect(int ind1, double **x, int* type,
 }
 
 double PairPANNA::compute_network(double *G, double *dEdG, int type){
-// double PairPANNA::compute_network(double *G, double *dEdG, int type, int inum){
   // *1 layer input
   // *2 layer output
   double *lay1, *lay2, *dlay1, *dlay2;
   dlay1 = new double[par.layers_size[type][0]*par.gsize];
-
-  // std::ofstream myfile;
-  // std::cout << "computation: " << inum << std::endl;
-  // myfile.open("atom_" + std::to_string(inum) +".dat");
   lay1 = G;
-  // myfile << "=G=,";
-  // for(int i = 0; i <par.gsize; i++){
-  //   myfile << lay1[i]<< ',';
-  // }
-  // myfile << std::endl;
 
-  for(int i=0; i<par.layers_size[type][0]*par.gsize; i++) dlay1[i] = 0.0;
+  std::fill_n(dlay1,par.layers_size[type][0]*par.gsize,0.0);
   // dG_i/dG_i = 1
   for(int i=0; i<par.gsize; i++) dlay1[i*par.gsize+i] = 1.0;
   // Loop over layers
@@ -225,7 +236,7 @@ double PairPANNA::compute_network(double *G, double *dEdG, int type){
     int size2 = par.layers_size[type][l+1];
     lay2 = new double[size2];
     dlay2 = new double[size2*par.gsize];
-    for(int i=0; i<size2*par.gsize; i++) dlay2[i]=0.0;
+    std::fill_n(dlay2,size2*par.gsize,0.0);
     // Matrix vector multiplication done by hand for now...
     // We compute W.x+b and W.(dx/dg)
     for(int i=0; i<size2; i++){
@@ -234,20 +245,10 @@ double PairPANNA::compute_network(double *G, double *dEdG, int type){
       for(int j=0;j<size1; j++){
         // a_i += w_ij * x_j
         lay2[i] += network[type][2*l][i*size1+j]*lay1[j];
-        // lay2[i] += network[type][2*l][j*size2+i]*lay1[j];
-        for(int k=0; k<par.gsize; k++)
-          // da_i/dg_k += w_ij * dx_j/dg_k
-          dlay2[i*par.gsize+k] += network[type][2*l][i*size1+j]*dlay1[j*par.gsize+k];
-          // dlay2[i*par.gsize+k] += network[type][2*l][j*size2+i]*dlay1[j*par.gsize+k];
       }
     }
-
-    // here dump of W.x+b
-    // myfile << "=L" << std::to_string(l) << "=,";
-    // for(int i = 0; i <size2; i++){
-    //   myfile << lay2[i]<< ',';
-    // }
-    // myfile << std::endl;
+    // da_i/dg_k += w_ij * dx_j/dg_k
+    matmul(dlay2,network[type][2*l],dlay1,size2,par.gsize,size1);
 
     // Apply appropriate activation
     // Gaussian
@@ -299,8 +300,9 @@ double PairPANNA::compute_network(double *G, double *dEdG, int type){
 
 void PairPANNA::compute(int eflag, int vflag)
 {
-  if (eflag || vflag) ev_setup(eflag,vflag);
-  else evflag = vflag_fdotr = 0;
+  // if (eflag || vflag) ev_setup(eflag,vflag);
+  // else evflag = vflag_fdotr = 0;
+  ev_init(eflag, vflag);
 
   double **x = atom->x;
   double **f = atom->f;
@@ -311,43 +313,73 @@ void PairPANNA::compute(int eflag, int vflag)
   int *ilist = list->ilist;
   int *numneigh = list->numneigh;
   int **firstneigh = list->firstneigh;
+  int igroup = group->find("all");
+  int groupbit = group->bitmask[igroup];
+
+  // Array to store energy contribution from each atom
+  double Etmp[inum];
+  std::fill_n(Etmp,inum,0.0);
+  // Getting the max possible number of neighbors
+  int nnmax = 0;
+  for(int a=0; a<inum; a++) nnmax = std::max(nnmax, numneigh[ilist[a]]);
+  // Array to store force contributions from each atom
+  double ftmp[inum*(nnmax+1)*3];
+  std::fill_n(ftmp,inum*(nnmax+1)*3,0.0);
 
   // Looping on local atoms
+  #pragma omp parallel for
   for(int a=0; a<inum; a++){
     int myind = ilist[a];
+    if (!(atom->mask[myind] & groupbit)) continue;
+    int nn = numneigh[myind];
     // Allocate this gvect and dG/dx and zero them
     double G[par.gsize];
     double dEdG[par.gsize];
     // dGdx has (numn+1)*3 derivs per elem: neigh first, then the atom itself
-    double dGdx[par.gsize*(numneigh[myind]+1)*3];
-    for(int i=0; i<par.gsize; i++){
-      G[i] = 0.0;
-      for(int j=0; j<(numneigh[myind]+1)*3; j++)
-        dGdx[i*(numneigh[myind]+1)*3+j] = 0.0;
-    }
+    double dGdx[par.gsize*(nn+1)*3];
+    std::fill_n(G,par.gsize,0.0);
+    std::fill_n(dGdx,par.gsize*(nn+1)*3,0.0);
     // Calculate Gvect and derivatives
-    compute_gvect(myind, x, type, firstneigh[myind], numneigh[myind], G, dGdx);
+    compute_gvect(myind, x, type, firstneigh[myind], nn, G, dGdx);
 
     // Apply network
-    double E = compute_network(G,dEdG,type[myind]-1);
+    Etmp[a] = compute_network(G,dEdG,type[myind]-1);
     // Calculate forces
-    int shift = (numneigh[myind]+1)*3;
-    for(int n=0; n<numneigh[myind]; n++){
-      int nind = firstneigh[myind][n];
+    int shift = (nn+1)*3;
+    int tshift = a*(nnmax+1)*3;
+    for(int n=0; n<nn; n++){
       for(int j=0; j<par.gsize; j++){
-        f[nind][0] -= dEdG[j]*dGdx[j*shift + 3*n    ];
-        f[nind][1] -= dEdG[j]*dGdx[j*shift + 3*n + 1];
-        f[nind][2] -= dEdG[j]*dGdx[j*shift + 3*n + 2];
+        ftmp[tshift + 3*n    ] -= dEdG[j] * dGdx[j*shift + 3*n    ];
+        ftmp[tshift + 3*n + 1] -= dEdG[j] * dGdx[j*shift + 3*n + 1];
+        ftmp[tshift + 3*n + 2] -= dEdG[j] * dGdx[j*shift + 3*n + 2];
       }
     }
     for(int j=0; j<par.gsize; j++){
-      f[myind][0] -= dEdG[j]*dGdx[j*shift + 3*numneigh[myind]    ];
-      f[myind][1] -= dEdG[j]*dGdx[j*shift + 3*numneigh[myind] + 1];
-      f[myind][2] -= dEdG[j]*dGdx[j*shift + 3*numneigh[myind] + 2];
+      ftmp[tshift + 3*nn    ] -= dEdG[j] * dGdx[j*shift + 3*nn    ];
+      ftmp[tshift + 3*nn + 1] -= dEdG[j] * dGdx[j*shift + 3*nn + 1];
+      ftmp[tshift + 3*nn + 2] -= dEdG[j] * dGdx[j*shift + 3*nn + 2];
     }
+  }
 
-    if (eflag_global) eng_vdwl += E;
-    if (eflag_atom) eatom[myind] += E;
+  // Summing all contributions to global values
+  for(int a=0; a<inum; a++){
+    int myind = ilist[a];
+    if (!(atom->mask[myind] & groupbit)) continue;
+
+    int nn = numneigh[myind];
+    int tshift = a*(nnmax+1)*3;
+    for(int n=0; n<nn; n++){
+      int nind = firstneigh[myind][n];
+      f[nind][0] += ftmp[tshift + 3*n    ];
+      f[nind][1] += ftmp[tshift + 3*n + 1];
+      f[nind][2] += ftmp[tshift + 3*n + 2];
+    }
+    f[myind][0] += ftmp[tshift + 3*nn    ];
+    f[myind][1] += ftmp[tshift + 3*nn + 1];
+    f[myind][2] += ftmp[tshift + 3*nn + 2];
+
+    if (eflag_global) eng_vdwl += Etmp[a];
+    if (eflag_atom) eatom[myind] += Etmp[a];
   }
 
   if (vflag_fdotr) {
@@ -512,7 +544,7 @@ int PairPANNA::get_parameters(char* directory, char* filename)
         // Common features are read.
         // From here on what will be read depends on the gversion
         if(gversion == 0){ // Potentials compatible with OPENKIM
-          std::cout << "G Version is " << gversion << std::endl;
+	  std::cout << "G Version is " << gversion << std::endl;
           if(key=="eta_rad"){
             tmp_eta_rad = std::atof(value.c_str()); parset[2] = 0; }
           else if(key=="Rc_rad"){
@@ -522,12 +554,12 @@ int PairPANNA::get_parameters(char* directory, char* filename)
           else if(key=="Rsst_rad"){
             par.Rsst_rad = std::atof(value.c_str()); parset[5] = 1; }
           else if(key=="RsN_rad"){
-            par.RsN_rad = std::atoi(value.c_str()); parset[6] = 1; 
-            par.eta_rad = new float[par.RsN_rad]; 
-            par.twoeta_rad = new float[par.RsN_rad];
-            par.Rs_rad  = new float[par.RsN_rad];
+            par.RsN_rad = std::atoi(value.c_str()); parset[6] = 1;
+            par.eta_rad = new double[par.RsN_rad];
+	    par.twoeta_rad = new double[par.RsN_rad];
+            par.Rs_rad  = new double[par.RsN_rad];
             for(int i=0;i<par.RsN_rad;i++) par.eta_rad[i]=tmp_eta_rad;
-            for(int i=0;i<par.RsN_rad;i++) par.Rs_rad[i]= par.Rs0_rad + i *(par.Rc_rad - par.Rs0_rad) / par.RsN_rad ; 
+            for(int i=0;i<par.RsN_rad;i++) par.Rs_rad[i]= par.Rs0_rad + i *(par.Rc_rad - par.Rs0_rad) / par.RsN_rad ;
             parset[14]=1; parset[2]=1;}
           else if(key=="eta_ang"){
             tmp_eta_ang = std::atof(value.c_str()); parset[7] = 0; }
@@ -538,29 +570,43 @@ int PairPANNA::get_parameters(char* directory, char* filename)
           else if(key=="Rsst_ang"){
             par.Rsst_ang = std::atof(value.c_str()); parset[10] = 1; }
           else if(key=="RsN_ang"){
-            par.RsN_ang = std::atoi(value.c_str()); parset[11] = 1; 
-            par.eta_ang = new float[par.RsN_ang];
-            par.Rs_ang  = new float[par.RsN_ang];
+            par.RsN_ang = std::atoi(value.c_str()); parset[11] = 1;
+            par.eta_ang = new double[par.RsN_ang];
+            par.Rs_ang  = new double[par.RsN_ang];
             for(int i=0;i<par.RsN_ang;i++) par.eta_ang[i]=tmp_eta_ang;
-            for(int i=0;i<par.RsN_ang;i++) par.Rs_ang[i]= par.Rs0_ang + i *(par.Rc_ang - par.Rs0_ang) / par.RsN_ang ; 
+            for(int i=0;i<par.RsN_ang;i++) par.Rs_ang[i]= par.Rs0_ang + i *(par.Rc_ang - par.Rs0_ang) / par.RsN_ang ;
             parset[15]=1; parset[7]=1;}
           else if(key=="zeta"){
             tmp_zeta = std::atof(value.c_str()); parset[12] = 0; }
           else if(key=="ThetasN"){
-            par.ThetasN = std::atoi(value.c_str()); parset[13] = 1; 
+            par.ThetasN = std::atoi(value.c_str()); parset[13] = 1;
             par.zeta = new int[par.ThetasN];
-            par.zeta_half = new float[par.ThetasN];
-            par.Thetas = new float[par.ThetasN];
+	    par.zeta_half = new double[par.ThetasN];
+            par.Thetas = new double[par.ThetasN];
             for(int i=0;i<par.ThetasN;i++) par.zeta[i]=tmp_zeta; parset[12]=1;
-            for(int i=0;i<par.ThetasN;i++) par.Thetas[i]= (0.5f+ i)*(M_PI/par.ThetasN); parset[16]=1;}  
+            for(int i=0;i<par.ThetasN;i++) par.Thetas[i]= (0.5f+ i)*(M_PI/par.ThetasN); parset[16]=1;}
         }//gversion = 0
         else if(gversion ==1 ){
           //First read allocation sizes
           if(key=="RsN_rad"){
             par.RsN_rad = std::atoi(value.c_str());
-            par.eta_rad = new float[par.RsN_rad];
-	          par.twoeta_rad = new float[par.RsN_rad];
-            par.Rs_rad = new float[par.RsN_rad]; parset[6]=1;}
+            par.eta_rad = new double[par.RsN_rad];
+	    par.twoeta_rad = new double[par.RsN_rad];
+            par.Rs_rad = new double[par.RsN_rad]; parset[6]=1;}
+          else if(key=="RsN_ang"){
+            par.RsN_ang = std::atoi(value.c_str());
+            par.eta_ang = new double[par.RsN_ang];
+            par.Rs_ang = new double[par.RsN_ang]; parset[11]=1;}
+          else if(key=="ThetasN"){
+            par.ThetasN = std::atoi(value.c_str());
+            par.zeta = new int[par.ThetasN];
+            par.zeta_half = new double[par.ThetasN];
+            par.Thetas = new double[par.ThetasN]; parset[13]=1;}
+          // Then cutoffs
+          else if(key=="Rc_rad"){
+            par.Rc_rad = std::atof(value.c_str()); parset[3] = 1; }
+          else if(key=="Rc_ang"){
+            par.Rc_ang = std::atof(value.c_str()); parset[8] = 1; }
           // Then param arrays
           else if(key=="eta_rad"){
             size_t pos = 0; int s = 0;
@@ -569,9 +615,20 @@ int PairPANNA::get_parameters(char* directory, char* filename)
               par.eta_rad[s] = std::atof(value.substr(0, pos).c_str());
               value.erase(0, pos+1);  s++; }
             if(value.length()>0){ par.eta_rad[s] = std::atof(value.c_str()); s++; }; parset[2] = 1; }
-          // Then cutoff
-          else if(key=="Rc_rad"){
-            par.Rc_rad = std::atof(value.c_str()); parset[3] = 1; }
+          else if(key=="eta_ang") {
+            size_t pos = 0; int s = 0;
+            value=value.substr(1, value.size() - 2); //get rid of [ ]
+            while ((pos = value.find(comma)) != std::string::npos) {
+              par.eta_ang[s] = std::atof(value.substr(0, pos).c_str());
+              value.erase(0, pos+1);  s++; }
+            if(value.length()>0){ par.eta_ang[s] = std::atof(value.c_str()); s++; }; parset[7] = 1; }
+          else if(key=="zeta") {
+            size_t pos = 0; int s = 0;
+            value=value.substr(1, value.size() - 2); //get rid of [ ]
+            while ((pos = value.find(comma)) != std::string::npos) {
+              par.zeta[s] = std::atoi(value.substr(0, pos).c_str());
+              value.erase(0, pos+1);  s++; }
+            if(value.length()>0){ par.zeta[s] = std::atoi(value.c_str()); s++; }; parset[12] = 1; }
           // Then the bin center arrays
           else if(key=="Rs_rad"){
             size_t pos = 0; int s = 0;
@@ -581,23 +638,6 @@ int PairPANNA::get_parameters(char* directory, char* filename)
               value.erase(0, pos+1);  s++; }
             if(value.length()>0){ par.Rs_rad[s] = std::atof(value.c_str()); s++; }; parset[14] = 1;
             par.Rs0_rad=par.Rs_rad[0];                           parset[4]=1;}
-
-          else if(key=="RsN_ang"){
-            par.RsN_ang = std::atoi(value.c_str());
-            par.eta_ang = new float[par.RsN_ang];
-            par.Rs_ang = new float[par.RsN_ang]; parset[11]=1;}
-          else if(key=="eta_ang") {
-            size_t pos = 0; int s = 0;
-            value=value.substr(1, value.size() - 2); //get rid of [ ]
-            while ((pos = value.find(comma)) != std::string::npos) {
-              par.eta_ang[s] = std::atof(value.substr(0, pos).c_str());
-              value.erase(0, pos+1);  s++; }
-            if(value.length()>0){ par.eta_ang[s] = std::atof(value.c_str()); s++; }; parset[7] = 1; }
-
-          // Then cutoffs
-          else if(key=="Rc_ang"){
-            par.Rc_ang = std::atof(value.c_str()); parset[8] = 1; }
-          // Then the bin center arrays
           else if(key=="Rs_ang") {
             size_t pos = 0; int s = 0;
             value=value.substr(1, value.size() - 2); //get rid of [ ]
@@ -606,20 +646,6 @@ int PairPANNA::get_parameters(char* directory, char* filename)
               value.erase(0, pos+1);  s++; }
             if(value.length()>0){ par.Rs_ang[s] = std::atof(value.c_str()); s++; }; parset[15] = 1;
             par.Rs0_ang=par.Rs_ang[0];                           parset[9]=1;}
-
-          else if(key=="ThetasN"){
-            par.ThetasN = std::atoi(value.c_str());
-            par.zeta = new int[par.ThetasN];
-            par.zeta_half = new float[par.ThetasN];
-            par.Thetas = new float[par.ThetasN]; parset[13]=1;}
-          else if(key=="zeta") {
-            size_t pos = 0; int s = 0;
-            value=value.substr(1, value.size() - 2); //get rid of [ ]
-            while ((pos = value.find(comma)) != std::string::npos) {
-              par.zeta[s] = std::atoi(value.substr(0, pos).c_str());
-              value.erase(0, pos+1);  s++; }
-            if(value.length()>0){ par.zeta[s] = std::atoi(value.c_str()); s++; }; parset[12] = 1; }
-
           else if(key=="Thetas") {
             size_t pos = 0; int s = 0;
             value=value.substr(1, value.size() - 2); //get rid of [ ]
@@ -794,11 +820,11 @@ int PairPANNA::get_parameters(char* directory, char* filename)
   //par.Rsi_ang = new float[par.RsN_ang];
   //for(int indr=0; indr<par.RsN_ang; indr++) par.Rsi_ang[indr] = par.Rs0_ang + indr * par.Rsst_ang;
   par.Rsi_ang = par.Rs_ang;
-  par.Thi_cos = new float[par.ThetasN];
-  par.Thi_sin = new float[par.ThetasN];
+  par.Thi_cos = new double[par.ThetasN];
+  par.Thi_sin = new double[par.ThetasN];
   for(int indr=0; indr<par.ThetasN; indr++)  {
-    //float ti = (indr + 0.5f) * M_PI / par.ThetasN;
-    float ti = par.Thetas[indr];
+    //double ti = (indr + 0.5f) * M_PI / par.ThetasN;
+    double ti = par.Thetas[indr];
     par.Thi_cos[indr] = cos(ti);
     par.Thi_sin[indr] = sin(ti);
   }
@@ -837,7 +863,7 @@ void PairPANNA::allocate()
 
   allocated = 1;
   int n = atom->ntypes;
-
+  
   memory->create(setflag,n+1,n+1,"pair:setflag");
   for (int i = 1; i <= n; i++) {
     for (int j = i; j <= n; j++) {
@@ -897,35 +923,12 @@ void PairPANNA::init_style()
   if (force->newton_pair == 0)
     error->all(FLERR, "Pair style PANNA requires newton pair on");
 
-  int irequest;
-  neighbor->cutneighmin = 1.0;
-  neighbor->cutneighmax = par.cutmax;
-  neighbor->delay = 0;
-  neighbor->every = 10;
-  neighbor->skin = 1.0;
-  irequest = neighbor->request(this,instance_me);
-  neighbor->requests[irequest]->pair = 1;
-  neighbor->requests[irequest]->id=1;
-  neighbor->requests[irequest]->half = 0;
-  neighbor->requests[irequest]->full = 1;
-  neighbor->requests[irequest]->occasional = 0;
+  // request FULL neighbor list
+  int list_style = NeighConst::REQ_FULL;
+  neighbor->add_request(this, list_style);
 
 }
 
-// ########################################################
-// ########################################################
-
-// ########################################################
-//                       INIT_LIST
-// ########################################################
-//
-
-void PairPANNA::init_list(int id, NeighList *ptr)
-{
-  if(id == 1) {
-    list = ptr;
-  }
-}
 
 // ########################################################
 // ########################################################
@@ -1003,20 +1006,13 @@ void PairPANNA::read_restart_settings(FILE *fp)
 // Not implemented.
 void PairPANNA::write_data(FILE *fp)
 {
-  /*
-  for (int i = 1; i <= atom->ntypes; i++)
-    fprintf(fp,"%d %g %g\n",i,epsilon[i][i],sigma[i][i]);
-  */
+
 }
 
 // Not implemented.
 void PairPANNA::write_data_all(FILE *fp)
 {
-  /*
-  for (int i = 1; i <= atom->ntypes; i++)
-    for (int j = i; j <= atom->ntypes; j++)
-      fprintf(fp,"%d %d %g %g %g\n",i,j,epsilon[i][j],sigma[i][j],cut[i][j]);
-  */
+
 }
 
 // Not implemented.

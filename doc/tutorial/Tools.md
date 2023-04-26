@@ -215,7 +215,30 @@ Standard usage is:
 python gvector_writer.py -s in_dir
 ```
 
+---
+### Training procedures
 
+#### iterative_magnitude_pruning.py
+This tool is used to set up a training procedure known as iterative magnitude pruning (see https://arxiv.org/abs/1803.03635), consisting of retraining a network multiple times while progressively masking (i.e. eliminating) some of the weights to obtain a final model that is sparse and contains way fewer parameters.
+
+To perform this multiple training, we need to set up our normal `train.ini` input, but then create another input file looking like this:
+```
+[IMP]
+base_input = train.ini
+prunable = 1:1:0
+ratio = 0.3
+N_iter = 10
+start_step = 1
+weights_step = 1000000
+
+```
+Where the `base_input` is our original input, the `prunable` flag indicates which layers will be masked, the `ratio` is the fraction of remaining weights to be removed at each iteration, `N_iter` is the total number of iterations, `start_step` the step to which we will reset the weights, and finally `weights_step` the step we will use to build the pruning mask.
+
+With this input, the tool can simply be called as:
+```
+python iterative_magnitude_pruning.py -c IMP.ini
+```
+This will generate multiple folders, one for each pruning iteration, and progressively start the training in each of them. Inspecting the `train.ini` in each folder, you can see how the tool modifies the original input. Should the tool not finish running all iterations, it will be sufficient to run the training in each folder in sequence, to obtain the same final result.
 
 
 

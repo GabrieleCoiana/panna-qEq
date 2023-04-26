@@ -1,0 +1,2 @@
+model_checkpoint_path: "epoch_2_step_200"
+all_model_checkpoint_paths: "epoch_2_step_200"

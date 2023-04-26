@@ -43,23 +43,18 @@ DEFAULT_LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
-        # main panna logger
+        # main panna logger :)
         'panna': {
             'handlers': ['console'],
             'level': 'INFO',
             'propagate': False,
         },
-        # 'panna.neuralnet.logger_dummy': {
-        #     'handlers': ['console_err'],
-        #     'level': 'DEBUG',
-        #     'propagate': True,
-        # },
     }
 }
 
 splash_screen_record = logging.makeLogRecord({
     'level': logging.INFO,
-    'levelno': 20,
+    'levelno': logging.INFO,
     'levelname': 'INFO',
     'msg':
     '\n'

@@ -33,6 +33,7 @@ def binary_encoder(example_dict, binary_out=None):
     force_flag = '0'
     per_atom_quantities_flag = '0'
     sparse_derivative_flag = '0'
+    long_range_el = '0'
 
     bin_version = 0
     n_atoms_bytes = len(example_dict['species']).to_bytes(**int_format)
@@ -69,8 +70,22 @@ def binary_encoder(example_dict, binary_out=None):
         np_pkg.append(
             np.asarray(example_dict['per_atom_quantity'],
                        dtype=np.float32).flatten())
+
+     ### use el_*_kernel key to check if there are long_range terms
+    if 'el_energy_kernel' in example_dict or 'el_force_kernel' in example_dict:
+        long_range_el = '1'
+        np_pkg.append(np.asarray(example_dict['el_energy_kernel'],
+                       dtype=np.float32).flatten())
+        if derivative_flag == '1':
+            np_pkg.append(np.asarray(example_dict['el_force_kernel'],
+                       dtype=np.float32).flatten())
+        np_pkg.append(np.asarray(example_dict['atomic_charges'],
+                       dtype=np.float32).flatten())
+        np_pkg.append(np.asarray(example_dict['total_charge'],
+                       dtype=np.float32).flatten())
+
     flags = '0000' + '0000' + \
-            '0000' + sparse_derivative_flag + per_atom_quantities_flag + \
+            '000' + long_range_el + sparse_derivative_flag + per_atom_quantities_flag + \
             force_flag + derivative_flag
 
     bin_version_bytes = bin_version.to_bytes(**int_format)

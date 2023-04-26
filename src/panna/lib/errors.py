@@ -6,8 +6,10 @@
 # For further information on the license, see the LICENSE.txt file        #
 ###########################################################################
 
+
 class ShapeError(ValueError):
     pass
+
 
 class NetworkNotAvailableError(ValueError):
     pass

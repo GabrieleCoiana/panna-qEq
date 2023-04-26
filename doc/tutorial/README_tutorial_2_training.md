@@ -36,8 +36,9 @@ Specify input and output directory addresses, as well as logging and saving freq
 * `data_dir` -- The directory containing the `tfrecord` data files we want to use for training.
 * `train_dir` -- The directory that will contain the training output and relevant meta-data from training.
 * `log_frequency` -- Frequency (in steps) for logging the reached accuracy and status of the training. It should be frequent, but can lead to large file sizes.
-* `save_checkpoint_steps` -- Frequency (in steps) of saving "checkpoint" or restart files for the training. 
-This can be kept bigger, i.e. less frequent for production runs.
+* `save_checkpoint_steps` -- Frequency (in steps) of saving "checkpoint" or restart files for the training. These are saved in the `_models` directory within the training dir.
+This value can be kept bigger, i.e. less frequent for production runs.
+* `restart_mode` -- How to perform a restart if we call the code again. The option `continue_from_last_ckpt` will load the network configuration from the latest checkpoint, but otherwise use the training parameters we specify in the rest of the input file.
 
 ##### [DATA_INFORMATION]
 Parameters about the descriptor functions we have employed 
@@ -54,13 +55,21 @@ overall training.
 
 ##### [TRAINING_PARAMETERS]
 Specify the parameters for the training:
+at each step a mini batch with a certain number of examples will be used for training.
+The total time of training is often measured in "epochs", i.e. the number of steps it takes for the model
+to see each example once (dataset size / batch size).
+While we adhere to this notation in PANNA, you can specify the "epoch" size to be an arbitrary number different from a real epoch,
+this might be useful, e.g., if you want to subdivide your training more finely for operations (such as automatic saves and validation)
+that can be performed once per epoch.
 
 * `batch_size` -- The size of the mini batch, i.e. the number of examples we consider in each optimization step during training
 * `learning_rate` -- The learning rate of the optimizer (default is constant). 
-Bigger it is, bigger the steps taken in the parameter space during optimization. 
-* `max_steps` -- The total number of optimization steps in the training as a stopping criteria.
-Note that in the case of a restart, the last step count is preserved, and the new training starts 
-from where the last one has finished, and would stop when the `max_steps` is reached.  
+The bigger it is, the bigger are the steps taken in the parameter space during optimization. 
+* `steps_per_epoch` -- The steps that will be considered an "epoch" of training.
+As mentioned this can be the time different than the standard epoch.
+* `max_epochs` -- The total number of epochs to train for before stopping.
+Note that in the case of a restart, the last epoch count is preserved, and the new training starts 
+from where the last one has finished, and would stop when the total `max_epochs` are reached.  
 
 ##### [DEFAULT_NETWORK]
 The structure of the neural network is specified here.
@@ -85,11 +94,14 @@ To run the code you should `train.py` with your version of python3 and  passing 
 ```
 python3 ../../src/panna/train.py --config input_files/train1.ini
 ```
+or
+```
+panna_train --c input_files/train1.ini
+```
 
 The run should take from a few seconds to a few minutes, depending on your machine.
-The error with respect to target energy is written in `delta_e.dat` file at every `log_frequency` steps, for every element of the mini batch.
-The mean error, mean absolute error, and standard deviation of error is written in `delta_e_std.dat`.
-A copy of the code output is also saved in a `.log` file.
+The mean absolute error (MAE) with respected to the target energy is printed during training and saved at the end of each epoch in the file `metrics.dat` in the training directory.
+Please refer to the documentation to explore other metrics which can be logged.
 The more detailed results about the network can be inspected by using tensorboard, the data visualizer of TensorFlow.
 To start tensorboard you should set the `logdir` argument of tensorboard to the `train_dir` of PANNA, e.g.:
 ```
@@ -99,20 +111,13 @@ tensorboard --logdir=./tutorial_train --host=0.0.0.0 --port=6006
 (where the host address and port utilized can be chosen by the user).
 While this command is running, we can visit the address above in a browser to visually inspect our training.
 
-Initially let us concentrate on a few aspects: in the `SCALARS` tab, we first see the evolution of loss function
-and evolution of error (Delta E) during the training. They should both rapidly decrease as the training starts. 
-The standard deviation of the resulting error after 1000 optimization steps is 0.05 eV per simulation in our references, 
+Initially let us concentrate on a few aspects: in the `SCALARS` tab, we first see the evolution of loss function and its components (in this case the sole energy component is present).
+This should rapidly decrease as the training starts.
+Below this, we can see the energy error estimated in the more common form of MAE or root mean square error (RMSE) per atom.
+The MAE after 1000 optimization steps is around 0.02 eV/atom in our references, 
 not an impressive result, but not bad for a few seconds of training on a simple network,
 and very limited data.
 Your result may vary slightly to reflect the randomization of weights, stochasticity in mini batch creation and training.
-
-Another important scalar to check is the average energy contribution of each species 
-to the total energy and its standard deviation.
-Note that if the standard deviation of contributed energy per atom is very small, 
-the network for that species contributes an almost constant value to the 
-total energy across different batches. 
-This means that the network has not yet learned to differentiate between different environments 
-and would not represent a good potential. 
 
 Secondly, we can check the `DISTRIBUTIONS` tab to have a 
 bird's eye view of the evolution of all parameters for each species and layer, which is a good indicator of the status of the training.
@@ -120,16 +125,14 @@ For example, for each layer you can see the weights and biases in the network an
 Networks tend to start learning from the layers closest to the output. 
 You can observe this behavior in this very short training session by noticing that the weights and biases of the layers close to output 
 are more structured and differentiated while the weights and biases close to input layer resembles very closely to the initial values.
-And lastly if you are using recent versions of tensorboard, you can use the `PROJECTOR` tab to apply
-dimensionality reduction and analysis tools on the different tensors of the network, such as PCA, t-SNE.
 
 Notice that if we wanted a better result, we could just restart the training and allow for a longer run.
-To try this, change the value of `max_steps` in the input file to a larger value and re-run the python directive as before. 
+To try this, change the value of `max_epochs` in the input file to a larger value and re-run the python directive as before. 
 As long as the `train_dir` variable is the same as before, the code keeps track of the number of steps performed.
-That way when you run the same command, the training will seamlessly resume,
-and stop at the new `max_steps` steps. **Important** the delta_e.dat and delta_e_std.dat files will be overwritten. 
-Try increasing the max_steps to 5000 (4000 more steps) and see whether you obtain lower error.
-In our reference calculation, the std error reduced to 0.03eV while due to the small batch size fluctuations are present.
+That way when you run the same command, the training will resume
+and stop at the new `max_epochs`. 
+Try increasing the max_epochs to 40 (30 more epochs) and see whether you obtain lower error.
+In our reference calculation, the MAE reduced to 5meV/atom, although due to the small batch size fluctuations are present.
 
 ---
 ### Validation
@@ -144,13 +147,9 @@ The input has 3 sections:
 Specifies the input and output folders:
 
 * `data_dir` -- The folder containing the examples we want to evaluate the network on.
-* `train_dir` -- The folder containing the output of the previous training to launch the trained network.
+* `train_ini` -- The input file used for training, so that we can recover some of the parameters.
+* `networks_dir` -- The folder containing the checkpoints of the previous training to launch the trained network. Typically it is `train_dir/_models`.
 * `eval_dir` -- The folder that will contain the results of the network evaluation.
-
-##### [TFR_STRUCTURE]
-Here we need to specify some characteristics of the data inputs for validation. For the basic case of this tutorial, it is sufficient to specify the following:
-
-* `g_size` -- The length of atomic input array
 
 ##### [VALIDATION_OPTIONS]
 There are a few options on how to compute the validation. For tutorial purposes we will only specify the following
@@ -161,13 +160,17 @@ With this simple input, we can now run the code like we did for training, e.g.:
 ```
 python3 ../../src/panna/evaluate.py --config input_files/validation1.ini
 ```
-This should very quickly compute the network on our evaluation set, 
+or
+
+```
+panna_evaluate -c input_files/validation1.ini
+```
+This should very quickly compute the last network on the evaluation set, 
 generating a file with `.dat` extension in the folder specified in `eval_dir`. 
 The name of the file indicates the checkpoint, the global step it imported the weights and biases from.
-If you have been following the tutorial so far, it is step 5000, hence the file is `5000.dat`.
+If you have been following the tutorial so far, it is epoch 40 and step 4000, hence the file is `epoch_40_step_4000.dat`.
 In this file, we can read the number of atoms at each simulation we used for validation, the DFT energy and the estimate of our neural network: 
 we should find that, while very far from a useful result, also on the evaluation set the network starts to approximate the desired energy.
-In our sample run, we have obtained 0.07eV as the standard deviation of the error. Your result may vary to indicate difference in the training.
 
 We will now see how to extract the parameters of this model, 
 to be reused in some external code for analysis, or to be imported in a new network for further training.
@@ -182,19 +185,24 @@ It will also generate a `.json` file specifying the structure of the network in 
 
 A simple input file for this code uses the following keywords:
 ##### [IO_INFORMATION]
-* `train_dir` -- The training directory, containing the checkpoints.
+* `network_dir` -- The directory containing the checkpoints, typically `train_dir/_models`.
 * `output_dir` -- The name of the directory where the network will be saved.
-* `step_number` -- The number of checkpoint for which we want to save the network.
+* `step_number` -- The step of the checkpoint for which we want to save the network. The value -1 defaults to the last available checkpoint.
 * `output_type` -- `PANNA` (default value) generates network files in the described format, suitable for restart. Other formats are possible (e.g. `LAMMPS` is available).
 * `gvector_input` -- Optional name of the input file used for creating the gvector descriptors. If provided, extra information is included in the output metadata file.
+* `train_input` -- The input file used for training, so that we can recover some of the parameters.
 
 If we used the tutorial inputs, we can save the network by running:
 ```
 python3 ../../src/panna/extract_weights.py --config input_files/extract_weights.ini
 ```
-(this will by default save the weights of step 1000, please change the `step_number` variable if you have trained your network for longer).
-A new folder (`saved_weights` in this case) will be created containing the network structure as `networks_metadata.json` and one `.npy` file for the weights and biases of each layer. 
-These files are simply numpy arrays containing the vector or matrix in question, should one need to access them to import the parameters directly to another program.
+or
+```
+panna_extract_weights -c input_files/extract_weights.ini
+```
+(this will save the last checkpoint of your training).
+A new folder (`saved_weights` in this case) will be created containing the network structure as `networks_metadata.json` and one `.npy` file for the weights and biases of each layer.
+These files are simply numpy arrays containing the vector or matrix in question, should one need to access them to import the parameters directly to another program. The names indicate the species, the number of layer and w or b for the two components.
 
 ---
 ### Modifying a network
@@ -204,6 +212,10 @@ and how to create a more complex species specific network with specific trainabl
 
 To do this, we will go back to the main training code `train.py` with a more complex input file, as the example provided in `train2.ini`. 
 These are the new sections and keywords we will use:
+
+#### [IO_INFORMATION]
+
+* `restart_mode` -- We set this to `metadata` to tell the code it has to expect a metadata file.
 
 #### [DEFAULT_NETWORK]
 
@@ -217,29 +229,21 @@ Where `X` is an element type as specified in the `atomic_sequence`, eg. [H].
 
 * `architecture` -- Behaves like the same tag in `[DEFAULT_NETWORK]`. Only needs to be specified if we want to change the architecture for this specific element.
 * `trainable` -- Behaves like the same tag in `[DEFAULT_NETWORK]`. Only needs to be specified if we want to change the trainable flag for this specific element.
-* `behavior` -- A colon separated string specifying where to get the weights for each layer, e.g. `load:new:new`. Accepts keywords `new` (start from random weights), `load` (load from file, see later), `keep` (keep the weights from the last checkpoint). 
-* `layerX_w_file` -- Indicates the file to load the starting weights for layer number `X` (0 based index) of this species network. 
-Only needs to be specified if different from the default network (in this case, what we are importing from the previous training session), 
-and needs to be of the appropriate size.
-* `layerX_b_file` -- Same as the previous, but for the biases.
+* `behavior` -- A colon separated string specifying where to get the weights for each layer, e.g. `load:new:new`. Accepts keywords `new` (start from random weights), `load` (load from file as specified in the metadata). If nothing is specified, when a metadata is present all weights are loaded.
 
 To give a practical example of how these keywords can be used, let us imagine, for instance, that we want to modify the network we just trained in the following way:
 
 * **N** -- We would like to resume the training on nitrogen where we left off, with no change. As this is the standard behavior, no new section is required.
 * **O** -- We like the final result for oxygen and would like to freeze it as it is, with no further training. 
 We will therefore add the `[O]` section and only specify the `trainable` field to indicate we do not want to train.
-* **C** -- We want to retrain carbon, with the same geometry, but we would like to borrow the first layer from the one of oxygen, 
-(you can imagine a scenario where we are copying from another carbon from a different training),
-while starting the others from scratch. 
-To specify this, we will need to indicate a file for each weight and bias element we import, using the keyword `new` for second and third layer.
+* **C** -- We want to retrain carbon, with the same geometry, but we would like to keep only the first layer, while starting the others from scratch. We can specify this with a behavior `load:new:new`
 * **H** -- Since hydrogen is present in all molecules, possibly with a variety of atomic environments, 
 let us imagine that we would like to give it more freedom by adding another hidden layer before the output: 
 we will restart the first layer (which has the same shape) from the previous training, 
 while the others will be started from scratch. 
 To achieve this, we will use the `architecture` keyword to indicate the new architecture. 
-We can also use the `trainable` keyword to make all layers trainable. 
-We do not need to add a `layer0_w_file` keyword, as this will be imported from the default behavior, 
-but we will specify `new` for all other layers as they need to be reinitialized.
+We can also use the `trainable` keyword to make all layers trainable. Since we have changed the number of layers, we will also specify their activation status.
+We will set the behavior `load` for the first layer and will specify `new` for all other layers as they need to be reinitialized.
 
 All in all, this section of our input file will therefore look like this (see `train2.ini`):
 ```
@@ -252,21 +256,28 @@ networks_metadata = saved_weights
 trainable = 0:0:0
 [C]
 behavior = load:new:new
-layer0_w_file = saved_weights/species_O_layer_0_weights_384x128.npy
-layer0_b_file = saved_weights/species_O_layer_0_biases_128.npy
 [H]
 architecture = 128:32:32:1
 trainable = 1:1:1:1
-behavior = keep:new:new:new
+activations = 1:1:1:0
+behavior = load:new:new:new
 ```
 
 As we can see we have complete control on the geometry and starting state of our network. 
+
+As another option, we will show in this training how the validation can be performed during the training phase, once per epoch.
+To achieve this, we simply add a new card with a single keyword:
+
+#### [VALIDATION_OPTIONS]
+
+* `data_dir` -- The directory with the `.tfr` of the validation data.
+
 Notice that this simulation should have a different `train_dir`, as it is not a restart but 
 should be considered a new instance of training.
 
 We can now run this new training again as 
 ```
-python3 ../../src/panna/train.py --config input_files/train2.ini
+panna_train -c input_files/train2.ini
 ```
 and analyze our results in tensorboard by pointing it to the new training directory:
 ```
@@ -275,6 +286,8 @@ tensorboard --logdir=./tutorial_train_2 --host=0.0.0.0 --port=6007
 We can see that, with all the changes made, this network may still be far from convergence, 
 but by looking in the `DISTRIBUTIONS` section we can notice how some species are not training, 
 some have restarted from scratch and others just resume from the previous state, just as we specified.
+
+Moreover, both in the command line and on tensorboard, we can see the MAE on the validation set, giving us directly an estimate of the generalization quality of our network.
 
 ---
 ### A more realistic training scenario
@@ -307,36 +320,16 @@ These can be applied with the addition of the following flags to the `[TRAINING_
 * `wscale_l2` -- Prefactor of the L2 regularization for the weights.
 * `bscale_l2` -- Prefactor of the L2 regularization for the biases.
 
-Another form of regularization is clipping the gradients. You can achieve this with the following
-flag in the same section:
-
-* `clip_value` -- the gradients will be clipped by value such that they will be in (-clip_value, +clip_value) range.
-  a value of 0.0 will turn off this feature. Default is 0.0.
-
 ### Parallelization
 PANNA also offers different flags to improve the algorithm parallelization for different architectures.
-The following parameters can be specified in section `[PARALLELIZATION]` of the input file:
+The following parameters can be specified in section `[IO_INFORMATION]` of the input file:
 
 * `num_parallel_readers` -- number of parallel readers to read the tfrecord to buffer. Default is 1.
 * `num_parallel_calls` -- number of parallel parsers that parse the tfrecord and load its content. Default is 1.
 * `shuffle_buffer_size_multiplier` -- how many multiples of the batch-size of data 
 should be shuffled before being used in batch creation. 
 Default is 10.
-* `prefetch_buffer_size_multiplier` -- how many multiples of batch-size of data should be read to buffer. 
-* `inter_op_parallelism_threads` -- How many operations of the graph can be launched in parallel. See TF documentation for details. 
-* `intra_op_parallelism_threads` -- How many threads are available for execution of each operation. See TF documentation for details. 
-
-Note that inter and intra _op_parallelism settings can greatly affect the performance of the code 
-but their optimization can be tedious as the optimum values vary between computing platform, and between the network architecture.
-
-
-### Output options
-Lastly, besides the already mentioned `log_frequency` and `save_checkpoint_steps`, 
-two other keywords in the `[IO_INFORMATION]` section can help get better control on the log and saved output:
-
-* `tensorboard_log_frequency` -- Specifies the frequency (in steps) 
-for saving points for tensorboard visualization (if missing defaults to `log_frequency` value).
-* `max_ckpt_to_keep` -- Specifies a maximum number of checkpoints to be saved, after which the oldest ones will be deleted.
+* `prefetch_buffer_size_multiplier` -- how many multiples of batch-size of data should be read to buffer.
 
 ---
 ### Training with forces
@@ -352,9 +345,19 @@ A new output file for each checkpoint with postfix `_forces.dat` will be created
 #### Sparse derivatives
 If the simulations consist of cells much larger than the cutoff, or of a lot of species, it might be beneficial to store the descriptors derivatives in a sparse format. The procedure to obtain this is specified in Tutorial 1, we will here list the keywords needed to benefit from this structure.
 
-In training, besides the aforementioned `forces_cost`, the keyword `sparse_derivatives = True` will have to be added to the [DATA_INFORMATION] card.
+In training, besides the aforementioned `forces_cost`, the keyword `sparse_derivatives = True` will have to be added to the [DATA_INFORMATION] card. This information will also be passed to the validation code through this input.
 
-Similarly in validation, besided requiring forces, the keyword `sparse_derivatives = True` will have to be added to the [TFR_STRUCTURE] card.
+---
+### Computing gvectors while training
+
+
+While precomputing derivatives of the descriptors is often worth the savings in computation time, these can take up a large amount of space, and create large datasets that need to be loaded to memory, possibly a number of times. This can be problematic in a few cases, like when the training set is very large (or I/O limited in the machine used for training), or if a some quick training needs to be done to test descriptor parameters, and we do not want to create multiple large copies of the descritors for single use.
+
+For all these cases, it is now possible to compute the descriptors from the example files while we are training the network. This is considerably more computationally expensive, but feasible on last generation GPUs.
+
+To enable this option, we need to set the option `input_format` to `example` in the [IO_INFORMATION] card (the default was `tfr`). Also, we need to specify the parameters of the descriptors, so we can use the keyword `gvect_ini` and pass the same input file as we have prepared for the precomputation. Now we can simply indicate the `data_dir` where the `.example` files are located, and we can start the training.
+
+(Please note that the first training steps can be especially slow, because the code needs to be optimized for different inputs. As the train progresses, it will typically speed up)
 
 ---
 ### REFERENCES

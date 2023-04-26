@@ -6,22 +6,13 @@ with open("README.md", "r") as fh:
 
 setup(
     name="PANNA",
-    version="1.0",
+    version="2.0.0",
     description='Properties from Artificial Neural Network Architectures',
     long_description=long_description,
     long_description_content_type="text/markdown",
     package_dir={'': 'src'},
     packages=find_packages(where='src'),
-    install_requires=['numpy'],
-    extras_require={
-        'tf': ['tensorflow>=1.4,<2'],
-        'extra': ['scipy', 'matplotlib', 'pandas', 'seaborn', 'ipython', 'ase'],
-        'develop': ['pytest', 'isort', 'flake8', 'flake8-comprehensions'],
-        'doc': [
-            'matplotlib', 'ipython', 'Sphinx', 'numpydoc', 'sphinx-rtd-theme',
-            'nbsphinx', 'jupyter_client', 'ipykernel', 'tensorflow', 'qeschema'
-        ]
-    },
+    install_requires=['numpy', 'tensorflow>=2', 'mendeleev'],
     entry_points={
         'console_scripts': [
             'panna_train=panna.train:main', 'panna_evaluate=panna.evaluate:main',

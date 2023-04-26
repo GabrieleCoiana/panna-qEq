@@ -5,36 +5,77 @@
 # The code is hosted on GitLab at https://gitlab.com/PANNAdevs/panna      #
 # For further information on the license, see the LICENSE.txt file        #
 ###########################################################################
-from collections import namedtuple
-from copy import deepcopy
+from contextlib import nullcontext
+from dataclasses import dataclass
+
 import logging
-import os
-import sys
+
+from typing import Tuple
+from typing import Sequence
+from typing import Optional
+from typing import List
+from typing import Dict
 
 import numpy as np
 import tensorflow as tf
 
-if __package__ != 'panna.neuralnet':
-    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from lib.errors import ShapeError
-else:
-    from ..lib.errors import ShapeError
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.constraints import Constraint
 
-from .layers import Layer
+from panna.neuralnet.activations import get_activation
 
 logger = logging.getLogger(__name__)
 
-def normalize_network_type(nn_type):
-    if nn_type in ['a2aff', 'A2AFF', 'ff', 'a2a', 'FF', 'A2A']:
-        nn_type = 'a2ff'
-    else:
-        raise ValueError(
-            '{} != a2aff : '
-            'Only all-to-all feed forward networks supported'.format(nn_type))
-    return nn_type
+
+@dataclass
+class NetworkConfigBase():
+    name: Optional[str] = None
+    compute_jacobian: bool = False
+    activation_stack: bool = False
+    kernel_regularizer: Optional[tf.keras.regularizers.Regularizer] = None
+    bias_regularizer: Optional[tf.keras.regularizers.Regularizer] = None
+    offset: float = 0.0
+
+    @property
+    def is_ready(self):
+        if self.name is not None:
+            return True
 
 
-class A2affNetwork():
+@dataclass
+class NetworkConfig(NetworkConfigBase):
+    feature_size: Optional[int] = None
+    layers_size: Optional[Sequence[int]] = None
+    layers_trainable: Optional[Sequence[bool]] = None
+    layers_activation: Optional[Sequence[str]] = None
+    preload_wbs: Optional[Sequence[np.ndarray]] = None
+    layers_prunable: Optional[Sequence[bool]] = None
+    layers_mask: Optional[Sequence[np.ndarray]] = None
+    metadata: Optional[dict] = None
+    metadata_dir: Optional[str] = None
+    # TODO normalization layer config: TBD
+
+    @property
+    def is_ready(self):
+        conditions = [
+            super().is_ready, self.feature_size is not None, self.layers_size
+            is not None
+        ]
+        return all(conditions)
+
+
+class MaskConstraint(Constraint):
+    def __init__(self, mask):
+        self.mask = mask
+
+    def __call__(self, w):
+        return w * self.mask
+
+    def get_config(self):
+        return {'mask': self.mask}
+
+
+class A2affNetwork(tf.keras.layers.Layer):
     """ Implementation of a all to all connected feed forward network
     A2affNetwork (feature_size, layers_size, name, network_wb=None,
                   trainables=None, activations=None, offset=None)
@@ -64,10 +105,10 @@ class A2affNetwork():
         [(w_values, b_values),......, (w_values, b_values)]
         an empty value is passed as np.empty(0)
         default is: creates all layer with Gaussian distribution
-    trainables: list of bools, optional
+    layers_trainable: list of bools, optional
         one for each layer to set a layer as trainable or not
         default is all layer trainables
-    activations: list of integer, optional
+    layers_activation: list of integer, optional
         one for each layer to set the activation kind of the layer
         default is: gaussian:gaussian:....:linear
     offset: float, optional
@@ -76,6 +117,11 @@ class A2affNetwork():
     norm_layer: Layer
         a layer applied before anything else for data normalization
 
+   compute_gradients: boolean
+       if gradients w.r.t. descriptor need to be computed
+       (memory intensive)
+   compute_gradients: boolean
+       if activations needs to be recovered for further analysis
     Raises
     ------
     ValueError if:
@@ -83,55 +129,113 @@ class A2affNetwork():
         - trainables is too small
         - activations is too small
     """
-    network_type = 'a2ff'
-    _wb_prefix = 'species_{}'
-    # quantity used to recover tensors from TF checkpoint
-    _reg_exps = {
-        'network': r'species_(\d+)',
-    }
 
-    def __init__(self,
-                 feature_size,
-                 layers_size,
-                 name,
-                 network_wb=None,
-                 trainables=None,
-                 activations=None,
-                 offset=None,
-                 norm_layer=None):
-        super().__init__()
+    _network_type = 'a2aff'
 
-        if not trainables:
+    def __init__(
+        self,
+        feature_size: int,
+        layers_size: Sequence[int],
+        name: str,
+        preload_wbs: Optional[Sequence[np.ndarray]] = None,
+        layers_trainable: Optional[Sequence[bool]] = None,
+        layers_activation: Optional[Sequence[str]] = None,
+        offset: Optional[float] = None,
+        compute_jacobian: bool = False,
+        activation_stack: bool = False,
+        kernel_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
+        bias_regularizer: Optional[tf.keras.regularizers.Regularizer] = None,
+        layers_prunable: Optional[Sequence[bool]] = None,
+        layers_mask: Optional[Sequence[np.ndarray]] = None,
+        metadata: Optional[dict] = None,
+        metadata_dir: Optional[str] = None,
+        constrain_even_terms: bool = False,
+        min_eigenvalue: float = 0.0
+    ):
+        # norm_layer Optional[tf.Module]=None):
+        super().__init__(name=name)
+
+        if not layers_trainable:
             # default behavior: all trainable
-            trainables = [True for i in range(len(layers_size))]
-        if not activations:
+            layers_trainable = [True for i in range(len(layers_size))]
+        if not layers_activation:
             # default behavior: gaussian:gaussian:....:linear
-            activations = [1 for i in range(len(layers_size) - 1)] + [0]
+            layers_activation = [1 for i in range(len(layers_size) - 1)] + [0]
 
-        if network_wb and (len(layers_size) != len(network_wb)):
+        if preload_wbs and (len(layers_size) != len(preload_wbs)):
             raise ValueError('network wb parameters are not enough')
-        if len(layers_size) != len(trainables):
+        if len(layers_size) != len(layers_trainable):
             raise ValueError('trainables parameters are not enough')
-        if len(layers_size) != len(activations):
+        if len(layers_size) != len(layers_activation):
             raise ValueError('activations parameters are not enough')
 
-        self.feature_size = int(feature_size)
+        self.feature_size = feature_size
+        self._compute_jacobian = compute_jacobian
+        self._activation_stack = activation_stack
         self.offset = offset or 0.0
-        self.name = name
-        self._norm_layer = norm_layer
 
-        input_size = norm_layer.wb_shape[1] if norm_layer else self.feature_size
-        layers_shaping = [(input_size, layers_size[0])] +\
-                         [(layers_size[i], layers_size[i + 1]) for i
-                          in range(len(layers_size) - 1)]
-        layers = []
-        for i in range(len(layers_size)):
-            layer = Layer(layers_shaping[i], trainables[i], activations[i], f'{i}')
-            if network_wb:
-                layer.w_value, layer.b_value = network_wb[i]
-            layers.append(layer)
+        self._layers_trainable = layers_trainable
+        self._layers_size = layers_size
+        self._layers_activation = layers_activation
+        self._preload_wbs = preload_wbs
+        self._layers_prunable = layers_prunable
+        self._layers_mask = layers_mask
 
-        self._layers = layers
+        self._kernel_regularizer = kernel_regularizer
+        self._bias_regularizer = bias_regularizer
+        self._metadata = metadata
+        self._metadata_dir = metadata_dir
+
+        self._layers = []
+        self._order = self._layers_size[-1] - 1 
+        self._min_eigenvalue = min_eigenvalue
+        self._constrain_even_terms = constrain_even_terms
+
+        # self._norm_layer = norm_layer
+        # input_size = norm_layer.wb_shape[1] if norm_layer else self.feature_size
+
+    def build(self, input_shape):
+        for i, output_size in enumerate(self._layers_size):
+            _, activation = get_activation(self._layers_activation[i])
+            if i>0:
+                input_size = self._layers_size[i-1]
+            else:
+                input_size = self.feature_size
+            if self._preload_wbs and self._preload_wbs[i]:
+                w_values, b_values = self._preload_wbs[i]
+                kernel_initializer = tf.constant_initializer(w_values)
+                bias_initializer = tf.constant_initializer(b_values)
+            else:
+                # Glorot initialization
+                stddev = np.sqrt(2.0 / (output_size + input_size))
+                # kernel_initializer, must be a callable class
+                # next time, this is called by the make_variable
+                # getter
+                kernel_initializer = tf.random_normal_initializer(mean=0.0,
+                                                                  stddev=stddev,
+                                                                  seed=None)
+                bias_initializer = tf.zeros
+            if self._layers_prunable and self._layers_prunable[i]:
+                # onemask = np.ones(self.layers_shaping[i])
+                constraint = MaskConstraint(self._layers_mask[i])
+            else:
+                constraint = None
+            with tf.name_scope(f'layer_{i}'):
+                layer = Dense(
+                    units=output_size,
+                    activation=activation,
+                    use_bias=True,  # TODO False if we reimplement rbf
+                    kernel_initializer=kernel_initializer,
+                    bias_initializer=bias_initializer,
+                    kernel_regularizer=self._kernel_regularizer,
+                    bias_regularizer=self._bias_regularizer,
+                    kernel_constraint=constraint,
+                    trainable=self._layers_trainable[i],
+                    name=f'layer_{i}')
+                layer.build(input_shape)
+            input_shape = output_size
+            self._layers.append(layer)
+        self.built = True
 
     def __str__(self):
         s = f'= {self.name} = network\n'
@@ -144,97 +248,99 @@ class A2affNetwork():
 
     @property
     def layers_size(self):
-        return [int(x.b_shape[0]) for x in self._layers]
+        return self._layers_size
+
+    # @property
+    # def norm_layer(self):
+    #     return self._norm_layer
+
+    # @norm_layer.setter
+    # def norm_layer(self, value):
+    #     if value.b_shape[0] == self[0].wb_shape[0]:
+    #         self._norm_layer = value
+    #     else:
+    #         raise NotImplementedError('operation not yet supported')
 
     @property
-    def norm_layer(self):
-        return self._norm_layer
-
-    @norm_layer.setter
-    def norm_layer(self, value):
-        if value.b_shape[0] == self[0].wb_shape[0]:
-            self._norm_layer = value
-        else:
-            raise NotImplementedError('operation not yet supported')
-
-    @property
-    def layers_shaping(self):
+    def layers_shaping(self) -> List[Tuple[float, float]]:
         """
-        Returns
-        -------
-        list of tuples, two elements for each layer e.g. [(shape_w, shape_b),.....]
+        two elements for each layer e.g. [(shape_w, shape_b),.....]
         """
-        return [x.wb_shape for x in self]
+        l_s = self.layers_size
+        layers_shaping = [(self.feature_size, l_s[0])] +\
+                         [(l_s[i], l_s[i + 1]) for i
+                          in range(len(l_s) - 1)]
+        return layers_shaping
 
     @property
-    def layers_trainable(self):
+    def layers_trainable(self) -> Tuple[bool, ...]:
+        """ If a layer is trainable or not
         """
-        Returns
-        -------
-        Tuple of Boolean, one elements for each layer
-
-        Raises
-        ------
-        ValueError
-            if number of elements differ from number of layer
-        """
-        trainability = []
-        for layer in self._layers:
-            trainability.append(layer.trainable)
-        return tuple(trainability)
+        return self._layers_trainable
 
     @layers_trainable.setter
-    def layers_trainable(self, value):
+    def layers_trainable(self, value: Tuple[bool, ...]):
+        if self.built:
+            raise ValueError('After building setter is disabled')
         if len(value) != len(self.layers_size):
             raise ValueError('passed trainable vector is '
                              'not compatible with current layer size')
-        for layer, trainable in zip(self._layers, value):
-            layer.trainable = trainable
+        self._layers_trainable = value
 
     @property
-    def layers_activation(self):
-        """ tuple of int
-        one elements for each layer
-
-        Raises
-        ------
-        ValueError
-            if number of elements differ from number of layer
+    def layers_activation(self) -> Tuple[int, ...]:
+        """ activation for each layer
         """
-        activations = []
-        for layer in self._layers:
-            activations.append(layer.activation)
-        return tuple(activations)
+        return self._layers_activation
 
     @layers_activation.setter
-    def layers_activation(self, value):
+    def layers_activation(self, value: Tuple[int, ...]):
+        if self.built:
+            raise ValueError('After building setter is disabled')
         if len(value) != len(self.layers_size):
             raise ValueError('passed act vector is '
                              'not compatible with current layer size')
-        for layer, activation in zip(self._layers, value):
-            layer.activation = activation
+        self._layers_activation = value
 
     @property
-    def network_wb(self):
+    def wbs_tensors(self) -> List[Tuple[np.ndarray, np.ndarray]]:
         """ list of tuple
         two numpy_array for each layer, weights and biases values
         """
-        wb = []
-        for layer in self._layers:
-            wb.append(layer.wb_value)
-        return tuple(wb)
+
+        if self.built:
+            wb = []
+            for layer in self._layers:
+                wb.append((layer.kernel.numpy(), layer.bias.numpy()))
+            return wb
+        else:
+            if self._preload_wbs is not None:
+                return self._preload_wbs
+        raise ValueError('WB not available, model must be built')
+
+    def to_json(self):
+        """Serialize the a2ff neural network.
+        Returns
+        -------
+        json_data: dict
+            dictionary data describing the network object
+        """
+
+        json_data = {
+            'type': self._network_type,
+            'name': self.name,
+            'feature_size': self.feature_size,
+            'layers': self._layers_size,
+            'activations': self.layers_activation,
+            'offset': self.offset
+        }
+
+        return json_data
 
     def __getitem__(self, index):
-        result = self._layers[index]
-        return deepcopy(result)
-
-    def __setitem__(self, index, value):
-        old_layer = self._layers[index]
-        if value.wb_shape != old_layer.wb_shape:
-            raise ShapeError('request to substitute a leayer of shape '
-                             '{} with one of shape {}'.format(
-                                 old_layer.wb_shape, value.wb_shape))
-        self._layers[index] = value
+        if self.built:
+            return self._layers[index]
+        raise ValueError(f'network {self.name} not built')
 
     def __iter__(self):
         self._index = 0
@@ -252,342 +358,68 @@ class A2affNetwork():
         """number of layers"""
         return len(self._layers)
 
-    def evaluate(self,
-                 features_vector,
-                 dfeatures_vectors=np.empty(0),
-                 add_offset=True,
-                 whole_output=False):
-        """ Evaluate the layer for a given set of inputs
+    def call(self, inputs: tf.Tensor):
+        """ Network evaluation
 
-        Parameters
-        ----------
-        features_vector: numpy_array(?, feature_size)
-            ? is the number of features that the network has to estimate
-              can be read as the number of atoms of the kind the
-              network should process
-        dfeatures_vectors: numpy_array(?, 3 * total ?, features_size), optional
-            TODO: check the sizes, maybe 1,2 are inverted
-            3 * total ? is the total number of atoms in the system
-            if not passed forces are not evaluated
-        add_offset: Boolean, optional
-            if adding the offset or not
-        whole_output: Boolean, optional
-            if returning activations for all layers besides the output
+        Paramenters
+        -----------
+        features_vector: Tensor
+            standard input vector
 
-        Returns
-        -------
-        numpy_array (?, last_layer_shape)
-             ? is the number of elements that have been be processed
-
-        numpy_array(?, 3 * total ?)
-            Derivatives, aka forces.
-            this is returned ONLY if dfeatures_vectors.size > 0
-        """
-        Out = namedtuple("Out", ["e", "d_g_d_e", "stack"])
-        in_vectors = features_vector
-
-        activation_stack = []
-
-        if dfeatures_vectors.size > 0:
-            din_vectors = np.transpose(dfeatures_vectors, (0, 2, 1))
-
-            if self.norm_layer:
-                in_vectors, din_vectors = self.norm_layer.evaluate(
-                    in_vectors, din_vectors)
-                if whole_output:
-                    activation_stack.apend(in_vectors)
-            for layer in self._layers:
-                out_vectors, dout_vectors = layer.evaluate(in_vectors, din_vectors)
-                in_vectors, din_vectors = out_vectors, dout_vectors
-                if whole_output:
-                    activation_stack.append(in_vectors)
-
-            dout_vectors = np.squeeze(dout_vectors, axis=(2))
-            if add_offset:
-                out_vectors += self.offset
-            if whole_output:
-                return Out(out_vectors, dout_vectors, activation_stack)
-            return Out(out_vectors, dout_vectors, None)
-
-        if self.norm_layer:
-            in_vectors = self.norm_layer.evaluate(in_vectors)
-            if whole_output:
-                activation_stack.append(in_vectors)
-
-        for layer in self._layers:
-            out_vectors = layer.evaluate(in_vectors)
-            in_vectors = out_vectors
-            if whole_output:
-                activation_stack.append(in_vectors)
-
-        if add_offset:
-            out_vectors += self.offset
-        if whole_output:
-            return Out(out_vectors, None, activation_stack)
-        return Out(out_vectors, None, None)
-
-    def tf_evaluate(self, features_vector, compute_gradients=False):
-        in_vectors = features_vector
-
-        if self.norm_layer:
-            with tf.variable_scope("species_{}_layer_{}".format(
-                    self.name, self.norm_layer.name)):
-                logger.debug('inserting layer - normalization')
-                in_vectors = self.norm_layer.tf_evaluate(in_vectors)
-
-        for l_idx, layer in enumerate(self._layers):
-            logger.debug('inserting layer - %d', l_idx)
-            with tf.variable_scope("species_{}_layer_{}".format(self.name, layer.name)):
-                out_vectors = layer.tf_evaluate(in_vectors)
-                in_vectors = out_vectors
-
-        if compute_gradients:
-            return out_vectors, tf.gradients(out_vectors, features_vector)
-        return out_vectors
-
-    def customize_network(self,
-                          *,
-                          feature_size=None,
-                          layers_size=None,
-                          trainables=None,
-                          behaviors=None,
-                          activations=None,
-                          offset=None,
-                          override_wb=None,
-                          norm_layer=None):
-        """Inplace customization of an already defined network.
-        This function must be used to consistently update an already
-        existent neural network with new parameters.
-        This function accept only named parameters.
-
-        Parameters
-        ----------
-        feature_size: int, optional
-            Size of the feature vector, or Input vector, or Gvector
-            depending on notations.
-            This parameter can be used to change the feature size of
-            an already defined network.
-            For now different network with different feature size
-            are not supported by the code so this feature has no
-            practical examples.
-        layers_size: list of integers, optional
-            List of integers that describe the layers shape:
-            For example a list like [128, 64, ..., 4, 1] will create a network
-            like:
-            - in layer: feature_size: 128
-            - first layer: 128:64
-            - second layer: 64:...
-            - ...
-            - last layer: ...:4
-            - out layer:  4:1
-            This function can used to change the network shape. For example in
-            the case were we want to make a network for a given specie
-            different.
-            In combination with the *behaviors* keyword it can be used also to
-            perform some limited on the fly brain surgery to the neural network.
-
-            ..alert:
-              Changing the layer depth *always* require the specification of the
-              parameters to describe the new layers:
-              - trainables parameter must be specified
-              - activations parameter must be specified
-              *If this isn't done* default values are loaded. For default values
-              refer to class documentations.
-              If a new layers_size is passed but the depth is kept equal old values
-              will be preserved.
-        trainables: list of bools, optional
-            One for each layer to set a layer as trainable or not.
-            Used to update values or define values for new layers
-        activations: list of integer, optional
-            One for each layer to set the activation kind of the layer
-            Used to update values or define values for new layers
-        Offset: float, optional
-            Network offset values
-        behaviors: list of string, optional
-            This parameter define what to do on weight an biases.
-            If used it must be *specified for every* layer in any case.
-            accepted values are
-            - new :: empty the weights and the biases of the layer.
-                     This must be used when a network architecture is deepened
-                     to initialize new layers with zeros.
-                     If no behavior is provided the default zero value is
-                     applied to all the layers.
-            - keep :: keep the weights and biases that are already present.
-                      This is practical in two cases:
-                      - when we want to reset a set of layers while restarting
-                        a training
-                      - when we change the architecture and we want to keep
-                        the layers closed to the input
-            - load :: Load a layer, the weight and biases values are loaded from
-                      the provided override_wb parameter.
-            .. alert::
-                If the network depth is changed the default behaviors for every
-                layer is 'new'
-        override_wb: dict, optional
-            Used when load is specified in behaviors.
-            format: {layer_key: (w, b)}
-            - layer_key = number, starting from 0
-            - w, b = weights and biases with a correct shape for the target
-                     layer
-        norm_layer: Layer, optional
-            update the normalization layer
-        """
-        # TODO: substitute behaviors with enum
-
-        # is easier to recreate a network, this will automatically apply all the
-        # consistency check
-        # trainable and activation falgs are layer properties
-        if (layers_size and (len(layers_size) == len(self._layers))) or not layers_size:
-            if not trainables:
-                trainables = self.layers_trainable
-            if not activations:
-                activations = self.layers_activation
-            if not behaviors:
-                for s_a, s_b in zip(self.layers_size,
-                                    layers_size if layers_size else self.layers_size):
-                    if s_a != s_b:
-                        behaviors = ['new'] * len(layers_size)
-                else:
-                    behaviors = ['keep'] * len(self._layers)
-        else:
-            if not behaviors:
-                behaviors = ['new'] * len(layers_size)
-
-        new_net = A2affNetwork(feature_size if feature_size else self.feature_size,
-                               layers_size if layers_size else self.layers_size,
-                               'dummy',
-                               trainables=trainables,
-                               activations=activations,
-                               norm_layer=norm_layer if norm_layer else self.norm_layer)
-        old_layers = self._layers
-
-        # trainable and activations are layer properties
-        self.feature_size = new_net.feature_size
-        self._layers = new_net._layers
-        if norm_layer:
-            self.norm_layer = norm_layer  # checkmate :)
-
-        if len(behaviors) != len(self.layers_size):
-            raise ValueError(f'{self.name} layer_behavior != layer sizes')
-
-        for i, behavior in enumerate(behaviors):
-            if behavior == 'keep':
-                if i >= len(old_layers):
-                    raise ValueError('requested to default a not available layer')
-                self._layers[i].w_value = old_layers[i].w_value
-                self._layers[i].b_value = old_layers[i].b_value
-            elif behavior == 'load':
-                tmp_layer = self._layers[i]
-                tmp_layer.w_value, tmp_layer.b_value = override_wb[i]
-            elif behavior == 'new':
-                # nothing to do, the layer is already the new version
-                pass
-            else:
-                raise ValueError('undefined behavior for layer')
-
-        if offset:
-            self.offset = offset
-
-    @property
-    def tf_ckpt_elements(self):
-        """ Regexps for TF checkpoint, this call is meant to be used in a
-        recursive script.
-
-        Returns
+        Return
         ------
-        names: list of str
-            each string is a regexp that need to be matched in the tf namespace
-            tree to access the subordinate object data.
-        objects: list of subordinate object
-            Subordinate object that can be initialized with the information
-            contained in the tf tree.
-            Only Layer objects can be network subordinate objects.
+        jacobian: Tensor
+            batch_size, output_size, input size
         """
-        names = []
-        objects = []
+        in_tensor = inputs
+        # if self.norm_layer:
+        #     with tf.variable_scope("species_{}_layer_{}".format(
+        #             self.name, self.norm_layer.name)):
+        #         logger.debug('inserting layer - normalization')
+        #         in_vectors = self.norm_layer.tf_evaluate(in_vectors)
+        if self._activation_stack:
+            stack = []
 
-        for l_idx, layer in enumerate(self._layers):
-            names.append("species_{}_layer_{}".format(self.name, layer.name))
-            objects.append(layer)
-        if self.norm_layer:
-            names.append("species_{}_layer_{}".format(self.name, self.norm_layer.name))
-            objects.append(self.norm_layer)
-        return names, objects
-
-    def to_json(self):
-        """Serialize the a2ff neural network.
-        Returns
-        -------
-        json_data: dict
-            dictionary data describing the network object
-        wbs: dict
-            dictionary data with the weight and biases
-             {name:variable, ..}
-        """
-        layers_data = []
-        wbs = {}
-        prefix = self.__class__._wb_prefix.format(self.name) + '_'
-        for layer in self._layers:
-            layer_data, wb = layer.to_json()
-            layers_data.append(layer_data)
-            wbs.update({prefix + name: value for name, value in wb.items()})
-
-        json_data = {
-            'feature_size': self.feature_size,
-            'layers': layers_data,
-            'name': self.name,
-            'offset': self.offset
-        }
-
-        if self.norm_layer:
-            norm_layer_data, wb = self.norm_layer.to_json()
-            wbs.update({prefix + name: value for name, value in wb.items()})
-            json_data['norm_layer'] = norm_layer_data
-
-        return json_data, wbs
-
-    @classmethod
-    def from_json(cls, json_data, base_path='', wfiles=True):
-        """ Load the network from a dump.
-
-        Parameters
-        ----------
-        json_data: dict
-            json serialization of the class.
-        base_path: string or path object
-            a path to search for weights and biases numpy files
-        wfiles: bool
-            wether the weights should be loaded from npy files
-
-        Returns
-        -------
-        network:
-            A new network object
-        """
-        feature_size = json_data['feature_size']
-        layers_json = json_data['layers']
-        name = json_data['name']
-        base_path = os.path.join(base_path, cls._wb_prefix.format(name))
-
-        if 'norm_layer' in json_data:
-            norm_layer = Layer.from_json(json_data['norm_layer'], base_path,
-                                         wfiles=wfiles)
+        if self._compute_jacobian:
+            cm = tf.GradientTape(persistent=True)
         else:
-            norm_layer = None
+            cm = nullcontext()
 
-        # create a fake network with proper initialization of all
-        # non layer dependent parameters, architecture is dummy
-        network = cls(feature_size, [1, 1],
-                      json_data['name'],
-                      offset=json_data['offset'],
-                      norm_layer=norm_layer)
-        # initialize the layers loading the from files
-        real_layers = []
-        for layer_json in layers_json:
-            real_layers.append(Layer.from_json(layer_json, base_path,
-                                               wfiles=wfiles))
+        with cm as g:
+            if g is not None:
+                g.watch(inputs)
+            
+            for l_idx, layer in enumerate(self._layers):
+                out_tensor = layer(in_tensor)
+                # if self._activation_stack:
+                #     stack.append(out_tensor.numpy())
+                in_tensor = out_tensor
 
-        # substitue the network, calling a customize should be better
-        # but this op should be safe enough
-        network._layers = real_layers
-        return network
+            out_tensor += self.offset
+
+            if self._order>=1:
+                #In this case, the out_tensors returns (order + 1) elements.
+                E_collection = []
+                if self._compute_jacobian:
+                    dE_collection = [] 
+                for k in range(self._order+1):
+                    Ek = out_tensor[:, k]
+                    if self._constrain_even_terms and self._order==2:
+                        if k != 0 and k % 2 == 0:
+                            #add a regularizer such that Ek is greater than -min_eigenvalue
+                            Ek = -self._min_eigenvalue + tf.nn.softplus(Ek) + 1e-3
+
+                    E_collection.append(Ek)
+                    if self._compute_jacobian:
+                        #Ek shape: # of atoms of this species
+                        #inputs shape: # of atoms of this species, size of gvectors
+                        dEk_dg = g.batch_jacobian(Ek[:,tf.newaxis], inputs)
+                        dE_collection.append(dEk_dg)
+                if self._compute_jacobian:
+                    return E_collection, dE_collection
+                return E_collection 
+
+        if self._compute_jacobian and self._order==0:
+            return out_tensor, g.batch_jacobian(out_tensor, inputs)
+    
+        return out_tensor

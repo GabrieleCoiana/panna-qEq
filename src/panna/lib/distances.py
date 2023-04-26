@@ -15,8 +15,8 @@ def cos_distance(v_1, v_2):
     ------
     distances, np array ?
     """
-    distances = np.dot(v_1[np.newaxis, :], v_2.T) / (
-        np.linalg.norm(v_1) * np.linalg.norm(v_2, axis=-1))
+    distances = np.dot(v_1[np.newaxis, :], v_2.T) \
+        / (np.linalg.norm(v_1) * np.linalg.norm(v_2, axis=-1))
     # fix numerical errors
     distances[distances > 1] = 1
     return distances

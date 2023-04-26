@@ -1,0 +1,29 @@
+[IO_INFORMATION]
+input_format = example
+network_file = ./model/epoch_140_step_500000
+
+[DATA_INFORMATION]
+atomic_sequence = C
+output_offset = 0.0
+
+[DEFAULT_NETWORK]
+g_size = 152
+architecture = 64:32:1
+trainable = 1:1:1
+
+[SYMMETRY_FUNCTION]
+type = mBP
+species = C
+
+[GVECT_PARAMETERS]
+gvect_parameters_unit = angstrom
+eta_rad = 32
+Rc_rad = 5.0
+Rs0_rad = 0.5
+RsN_rad = 24
+eta_ang = 16.0
+Rc_ang = 5.0
+Rs0_ang = 0.5
+RsN_ang = 8
+zeta = 128.0
+ThetasN = 16

@@ -6,275 +6,197 @@
 # For further information on the license, see the LICENSE.txt file        #
 ###########################################################################
 """ Code use to evaluate a dataset on a checkpoint/s
-note:
-    if batchsize == -1 then use the whole dataset
 """
 import argparse
-import configparser
-from functools import partial
 import logging
-import multiprocessing as mp
 import os
-import random as rnd
-import sys
 import time
+import numpy as np
 
-from tensorflow.errors import NotFoundError
-
-if __package__ != 'panna':
-    import neuralnet as net
-    from lib.example_bin import load_example
-    from lib.log import emit_splash_screen, init_logging
-    from lib.parser_callable import converters
-    from neuralnet.scaffold_selector import scaffold_selector
-else:
-    from . import neuralnet as net
-    from .lib.example_bin import load_example
-    from .lib.log import emit_splash_screen, init_logging
-    from .lib.parser_callable import converters
-    from .neuralnet.scaffold_selector import scaffold_selector
+from panna.lib.log import emit_splash_screen
+from panna.neuralnet.config_parser_train import parameter_file_parser
+from panna.neuralnet.config_parser_validation import parse_validation_config
+from panna.neuralnet.checkpoint import ModelFile
+from panna.neuralnet.panna_model import create_panna_model
+from panna.neuralnet.LongRange_electrostatic_model import create_panna_model_with_electrostatics
 
 logger = logging.getLogger('panna')
 
 
-def _eval_function(example, scaffold, add_offset):
-    """Helper for parallelization
-
-    Args:
-        example: a example obj
-        scaffold: a scaffold obj
-    Return:
-        a string: filename, n_natoms, dft, prediction
-
-    """
-    en_prediction, *_ = scaffold.evaluate(example, add_offset=add_offset)
-    en_dft = example.true_energy
-    string = '{} {} {} {}'.format(example.name, example.n_atoms, en_dft, en_prediction)
-    return string
-
-
-def _eval_function_forces(example, scaffold, add_offset):
-    """Helper for parallelization when computing forces
-
-    Parameters
-    ----------
-    example:
-        the example to be evaluate
-
-    scaffold:
-        the scaffold with the networks that will
-        be used in the evaluation
-
-    add_offset: bool
-        boolean to enable/disable the offset
-
-    Returns
-    -------
-    string
-        'n_atoms reference energy predicted energy'
-    string
-        'example_id atom_id fx fy fz'
-    """
-    en_prediction, forces_prediction, *_ = scaffold.evaluate(example=example,
-                                                             forces_flag=True,
-                                                             add_offset=add_offset)
-
-    n_atoms = example.n_atoms
-    en_ref = example.true_energy
-    forces_ref = example.forces
-
-    string = '{} {} {} {}'.format(example.name, example.n_atoms, en_ref, en_prediction)
-
-    forces_ref = forces_ref.reshape(n_atoms, 3)
-    forces_prediction = forces_prediction.reshape(n_atoms, 3)
-    string2_list = [
-        example.name + ' {} '.format(idx)
-        + ' '.join([str(f) for f in forces_prediction[idx]]) + ' '
-        + ' '.join([str(f) for f in forces_ref[idx]]) for idx in range(n_atoms)
-    ]
-    string2 = '\n'.join(string2_list) + '\n'
-    return string, string2
-
-
-def _ckpts_selector(train_dir, validation_parameters):
-    ck_steps = net.Checkpoint.checkpoint_step_list(train_dir)
-    single_step = validation_parameters.getboolean('single_step', False)
-    step_number = validation_parameters.getint('step_number', None)
-    subsampling = validation_parameters.getint('subsampling', None)
-    start = validation_parameters.getint('start', 0)
-    end = validation_parameters.getint('end', len(ck_steps))
-
-    if (single_step and not step_number):
-        logger.info('evaluating last checkpoint')
-        ck_steps = [ck_steps[-1]]
-    elif (single_step and step_number):
-        logger.info('evaluating step number %d', step_number)
-        logger.info('not available in this version -- see steps finder')
-        raise NotImplementedError()
-    elif (not single_step and subsampling):
-        logger.info('evaluation of all the checkpoints at steps of %d ', subsampling)
-        ck_steps = ck_steps[start:end:subsampling]
-    else:
-
-        logger.info(f'evaluation of all the checkpoints in range {start} {end}')
-        logger.info('range given in file index and not training step')
-        ck_steps = ck_steps[start:end]
-    return ck_steps
-
-
-def collect_data_files(data_dir):
-    dataset_files = [os.path.join(data_dir, x) for x in os.listdir(data_dir)]
-    logger.info('files in the dataset folder: %d ', len(dataset_files))
-    return dataset_files
-
-
-def load_networks(nets_dir, nets_format, format_options=None):
-    if nets_format == 'tf_checkpoint':
-        ck_steps = _ckpts_selector(nets_dir, format_options)
-
-        # load ckpts
-        ckpts = [net.Checkpoint(nets_dir, ck_step) for ck_step in ck_steps]
-        # extract scaffols
-        scaffolds = []
-        for ckpt in ckpts:
-            try:
-                scaf = ckpt.get_scaffold
-                scaffolds.append(scaf)
-            except NotFoundError:
-                logger.warning('%s not found because of TF bug', ckpt.filename)
-
-    elif nets_format == 'PANNA':
-        scaffold = scaffold_selector('PANNA').load_dump(nets_dir)
-        scaffolds = [scaffold]
-
-    else:
-        logger.info('Unknown network format.')
-        sys.exit(0)
-
-    return scaffolds
-
-
-def open_writers(scaffolds, out_dir, compute_forces):
-    scaffolds_non_computed = []
-    energy_writers = []
-    if compute_forces:
-        force_writers = []
-
-    # filter already computed scaffolds
-    for scaffold in scaffolds:
-        name = scaffold.name
-        file_name = os.path.join(out_dir, '{}.dat'.format(name))
+def _filter_model_files(output_folder, model_files):
+    """Filter already evaluated models."""
+    model_files_not_computed = []
+    for model_file in model_files:
+        name = f'epoch_{model_file.epoch}_step_{model_file.step}'
+        file_name = os.path.join(output_folder, f'{name}.dat')
 
         if os.path.isfile(file_name) and os.path.getsize(file_name) > 100:
             logger.info('%s already computed', file_name)
             continue
 
-        scaffolds_non_computed.append(scaffold)
-
-        energy_writers.append(open(os.path.join(out_dir, '{}.dat'.format(name)), 'w'))
-        if compute_forces:
-            force_writers.append(
-                open(os.path.join(out_dir, '{}_forces.dat'.format(name)), 'w'))
-    writers = []
-    for e_writer in energy_writers:
-        writers.append([e_writer])
-        e_writer.write('#filename n_atoms e_ref e_nn\n')
-
-    if compute_forces:
-        for f_writer, writer in zip(force_writers, writers):
-            writer.append(f_writer)
-            f_writer.write('#filename atom_id '
-                           'fx_nn fy_nn fz_nn '
-                           'fx_ref fy_ref fz_ref\n')
-    return scaffolds_non_computed, writers
+        model_files_not_computed.append(model_file)
+    return model_files_not_computed
 
 
-def _load_example(file_name):
-    tmp = load_example(file_name)
-    # dummy call trigger desparsification
-    # tmp.dgvects
-    return tmp
+def _prepare_model(model_params, model_file, dummy_batch):
+
+    if model_params.long_range_el:
+        panna_model = create_panna_model_with_electrostatics(model_params)
+    else:
+        panna_model = create_panna_model(model_params)
+    _ = panna_model(dummy_batch)
+    panna_model.load_weights(model_file.file_name)
+    return panna_model
 
 
-def load_single_file(pool, n_loaded_examples, dataset_files, batch_size):
-    examples = []
-    # when the examples are all separated in different files
-    if batch_size == -1 and n_loaded_examples == 0:
-        # we want to load all the example in memory
-        # this is done only once
-        example_files = dataset_files
-        tt = time.time()
-        logger.info('loading all the example in the folder, '
-                    'this operation may take a while')
-        examples_parameters = [(x, ) for x in example_files]
-        examples = pool.starmap(_load_example, examples_parameters)
-        logger.info('loading all the example in the folder,' 'done')
-        tt = (time.time() - tt) * 1000
-        logger.info(f'time = {tt/1000:2.2f} s, <{tt/len(examples):2.2f}> ms')
+class Writers():
+    """Writers to file (context manager)."""
+    def __init__(self, 
+                 output_folder: str, 
+                 model_file: ModelFile, 
+                 forces: bool = False,
+                 long_range_el: bool = False):
+        self._output_folder = output_folder
+        self._model_file = model_file
+        self._forces = forces
+        self._long_range_el = long_range_el
 
-    elif batch_size > 0:
-        # if the validation dataset is too big can be useful
-        # to only randomly sample it
-        rnd.shuffle(dataset_files)
-        example_files = dataset_files[:batch_size]
-        logger.info('loading a subset of all the available examples in the folder')
-        examples_parameters = [(x, ) for x in example_files]
-        examples = pool.starmap(load_example, examples_parameters)
-    return examples
+        self._file_base_name = f'epoch_{model_file.epoch}_step_{model_file.step}'
+
+    def _open_energy_writer(self):
+        file_name = os.path.join(self._output_folder, f'{self._file_base_name}.dat')
+        stream = open(file_name, 'w')
+        stream.write('#filename n_atoms e_ref e_nn\n')
+        return stream
+
+    def _open_force_writer(self):
+        file_name = os.path.join(self._output_folder,
+                                 f'{self._file_base_name}_forces.dat')
+        stream = open(file_name, 'w')
+        stream.write('#filename atom_id fx_nn fy_nn fz_nn fx_ref fy_ref fz_ref\n')
+        return stream
+
+    def _open_charge_writer(self):
+        file_name = os.path.join(self._output_folder,
+                                 f'{self._file_base_name}_chargess.dat')
+        stream = open(file_name, 'w')
+        stream.write('#filename atom_id q_nn q_ref\n')
+        return stream
+
+    def _energy_write(self, names, ns_atoms, en_refs, en_predictions):
+        for name, n_atoms, en_ref, en_prediction in zip(names, ns_atoms, en_refs,
+                                                        en_predictions):
+            if isinstance(name, bytes):
+                name = name.decode()
+            string = f'{name} {n_atoms} {en_ref} {en_prediction}\n'
+            self._energy_stream.write(string)
+    
+    def _charge_write(self, names, n_atoms, charge_pred, charge_ref):
+        # loop over examples
+        for name, nat, example_pred, example_ref in zip(names, n_atoms, 
+                                                   charge_pred,
+                                                   charge_ref):
+            if isinstance(name, bytes):
+                name = name.decode()
+            # loop over atoms
+            example_pred = np.reshape(example_pred,[-1])
+            example_ref = np.reshape(example_ref,[-1])
+            for idx, (pred, ref) in enumerate(zip(example_pred[:nat],
+                                                  example_ref[:nat])):
+                pred = '{}'.format(pred)
+                ref = '{}'.format(ref)
+                string = f'{name} {idx} {pred} {ref}\n'
+                self._charge_stream.write(string)
 
 
-def load_tfr(_pool, n_loaded_examples, dataset_files, g_size, compute_forces,
-             sparse_derivatives):
-    if n_loaded_examples == 0:
-        examples = []
-        logger.info('loading TFR, this may take a while')
-        for example in net.iterator_over_tfdata(g_size,
-                                                *dataset_files,
-                                                derivatives=compute_forces,
-                                                sparse_derivatives=sparse_derivatives):
-            examples.append(example)
-        return examples
-    return []
+    def _force_write(self, names, n_atoms, forces_prediction, forces_ref):
+        # loop over examples
+        for name, nat, example_pred, example_ref in zip(names, n_atoms, 
+                                                   forces_prediction,
+                                                   forces_ref):
+            if isinstance(name, bytes):
+                name = name.decode()
+            # loop over atoms
+            example_pred = np.reshape(example_pred,(-1,3))
+            example_ref = np.reshape(example_ref,(-1,3))
+            for idx, (pred, ref) in enumerate(zip(example_pred[:nat],
+                                                  example_ref[:nat])):
+                pred = '{} {} {}'.format(*pred)
+                ref = '{} {} {}'.format(*ref)
+                string = f'{name} {idx} {pred} {ref}\n'
+                self._force_stream.write(string)
 
-
-def run_eval(scaffolds, writers, number_of_process, load_function, compute_forces,
-             add_offset):
-    logger.info('----start evaluation----')
-    pool = mp.Pool(processes=number_of_process)
-    n_scaffolds = len(scaffolds)
-
-    examples = []
-    for idx, (scaffold, writer) in enumerate(zip(scaffolds, writers)):
-        logger.info('validating network: %d/%d', idx + 1, n_scaffolds)
-        examples_new = load_function(pool, len(examples))
-        if examples_new:
-            examples = examples_new
-        if not examples:
-            logger.info('no example found')
-            break
-
-        parallel_feed = [(example, scaffold, add_offset) for example in examples]
-
-        if compute_forces:
-            tt = time.time()
-            energy_forces = pool.starmap(_eval_function_forces, parallel_feed)
-            string = '\n'.join([x[0] for x in energy_forces])
-            string2 = ''.join([x[1] for x in energy_forces])
-            tt = (time.time() - tt) * 1000
-            logger.info(f'time = {tt/1000:2.2f} s, <{tt/len(parallel_feed):2.2f}> ms')
+    def write(self, data):
+        """Write data on proper writers."""
+        if self._forces:
+            if self._long_range_el:
+                energies, forces, charges = data[0]
+            else:
+                energies, forces = data[0]
         else:
-            string = '\n'.join(pool.starmap(_eval_function, parallel_feed))
+            if self._long_range_el:
+                energies, charges = data[0]
+            else:
+                energies = data[0]
 
-        writer[0].write(string)
-        writer[0].flush()
-        if compute_forces:
-            writer[1].write(string2)
-            writer[1].flush()
+        n_atoms = data[1]
+        if self._long_range_el:
+            batch_energies_ref, batch_forces_ref, batch_charges_ref = data[2]
+        else:
+            batch_energies_ref, batch_forces_ref = data[2]
+        names = data[3]
 
-    for writer in writers:
-        writer[0].close()
-        if compute_forces:
-            writer[1].close()
+        if names[0] == b'N.A.':
+            logger.info('file names are not available')
+            names = ['N.A.'] * energies.shape[0]
+
+        tt = time.time()
+        self._energy_write(names, n_atoms, batch_energies_ref, energies)
+        if self._forces:
+            self._force_write(names, n_atoms, forces, batch_forces_ref)
+        if self._long_range_el:
+            self._charge_write(names, n_atoms, charges, batch_charges_ref)
+
+        tt = (time.time() - tt) * 1000
+        logger.info(f'write time = {tt/1000:2.2f} s')
+
+    def __enter__(self):
+        """Open writers."""
+        self._energy_stream = self._open_energy_writer()
+        if self._forces:
+            self._force_stream = self._open_force_writer()
+        if self._long_range_el:
+            self._charge_stream = self._open_charge_writer()
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        """Close writers."""
+        self._energy_stream.close()
+        if self._forces:
+            self._force_stream.close()
+        if self._long_range_el:
+            self._charge_stream.close()
+
+def run_eval(model_params, model_files, dataset, output_folder):
+    """Model evaluation script."""
+    force_flag = model_params.compute_forces
+    long_range_el = model_params.long_range_el
+
+    n_models = len(model_files)
+    dummy_batch = next(iter(dataset))
+
+    logger.info('----start evaluation----')
+    for idx, model_file in enumerate(model_files):
+        logger.info('validating network: %d/%d, epoch: %d step: %d', idx + 1, n_models,
+                    model_file.epoch, model_file.step)
+        model = _prepare_model(model_params, model_file, dummy_batch)
+        tt = time.time()
+        out = model.predict(dataset, use_multiprocessing=True)
+        tt = (time.time() - tt) * 1000
+        logger.info(f'eval time = {tt/1000:2.2f} s')
+
+        with Writers(output_folder, model_file, force_flag, long_range_el) as f:
+            f.write(out)
 
 
 def main(*args, **kwargs):
@@ -290,52 +212,22 @@ def main(*args, **kwargs):
                         required=False)
     args = parser.parse_args()
 
-    init_logging()
     emit_splash_screen(logger)
 
-    config = configparser.ConfigParser(converters=converters)
-    config.read(args.config)
+    valid_config = parameter_file_parser(args.config)
+    train_config_file = valid_config['IO_INFORMATION'].get('train_ini', 'train.ini')
+    train_config = parameter_file_parser(train_config_file)
 
-    io_info = config['IO_INFORMATION']
-    validation_options = config['VALIDATION_OPTIONS']
-    dataset_files = collect_data_files(io_info.get('data_dir'))
-    scaffolds = load_networks(io_info.get('train_dir'),
-                              io_info.get('networks_format', 'tf_checkpoint'),
-                              validation_options)
+    model_params, model_files, dataset = parse_validation_config(
+        valid_config, train_config)
 
-    out_dir = io_info.get('eval_dir')
-    if not os.path.isdir(out_dir):
-        os.mkdir(out_dir)
+    output_folder = valid_config['IO_INFORMATION'].get('eval_dir')
+    if not os.path.isdir(output_folder):
+        os.mkdir(output_folder)
 
-    if config.has_section('PARALLELIZATION'):
-        number_of_process = config['PARALLELIZATION'].getint('number_of_process', 4)
-    else:
-        number_of_process = 4
+    model_files = _filter_model_files(output_folder, model_files)
 
-    compute_forces = validation_options.getboolean('compute_forces', False)
-
-    scaffolds, writers = open_writers(scaffolds, out_dir, compute_forces)
-
-    example_format = io_info.get('example_format', 'TFR')
-    add_offset = validation_options.getboolean('add_offset', True)
-
-    if example_format == 'single_files':
-        batch_size = validation_options.getint('batch_size', -1)
-        load = partial(load_single_file,
-                       dataset_files=dataset_files,
-                       batch_size=batch_size)
-    elif example_format == 'TFR':
-        g_size = config['TFR_STRUCTURE'].getint('g_size')
-        sparse_derivatives = config['TFR_STRUCTURE'].getboolean(
-            'sparse_derivatives', False)
-        load = partial(load_tfr,
-                       dataset_files=dataset_files,
-                       g_size=g_size,
-                       compute_forces=compute_forces,
-                       sparse_derivatives=sparse_derivatives)
-    else:
-        raise ValueError('Example format not supported')
-    run_eval(scaffolds, writers, number_of_process, load, compute_forces, add_offset)
+    run_eval(model_params, model_files, dataset, output_folder)
 
 
 if __name__ == '__main__':

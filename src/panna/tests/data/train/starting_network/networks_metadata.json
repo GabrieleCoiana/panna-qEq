@@ -1,88 +1,6 @@
 {
-  "gvect_params": {
-    "eta_rad": [
-      16.0,
-      16.0,
-      16.0,
-      16.0,
-      16.0,
-      16.0,
-      16.0,
-      16.0,
-      16.0,
-      16.0,
-      16.0,
-      16.0,
-      16.0,
-      16.0,
-      16.0,
-      16.0
-    ],
-    "Rc_rad": 4.6,
-    "RsN_rad": 16,
-    "RsN_ang": 4,
-    "eta_ang": [
-      6.0,
-      6.0,
-      6.0,
-      6.0
-    ],
-    "Rc_ang": 3.1,
-    "Rs_rad": [
-      0.5,
-      0.75625,
-      1.0125,
-      1.2687499999999998,
-      1.525,
-      1.78125,
-      2.0374999999999996,
-      2.2937499999999997,
-      2.55,
-      2.80625,
-      3.0625,
-      3.3187499999999996,
-      3.5749999999999997,
-      3.83125,
-      4.0874999999999995,
-      4.34375
-    ],
-    "Rs_ang": [
-      0.5,
-      1.15,
-      1.7999999999999998,
-      2.4499999999999997
-    ],
-    "Thetas": [
-      0.19634954084936207,
-      0.5890486225480862,
-      0.9817477042468103,
-      1.3744467859455345,
-      1.7671458676442586,
-      2.1598449493429825,
-      2.552544031041707,
-      2.945243112740431
-    ],
-    "zeta": [
-      50,
-      50,
-      50,
-      50,
-      50,
-      50,
-      50,
-      50
-    ],
-    "ThetasN": 8
-  },
-  "gversion": 1,
   "version": "v1",
   "scaffold_type": "PANNA",
-  "networks_type": [
-    "a2ff",
-    "a2ff",
-    "a2ff",
-    "a2ff"
-  ],
   "networks_species": [
     "H",
     "C",
@@ -91,139 +9,67 @@
   ],
   "networks": [
     {
+      "type": "a2aff",
+      "name": "H",
       "feature_size": 384,
       "layers": [
-        {
-          "wb_shape": [
-            384,
-            12
-          ],
-          "activation": 1,
-          "trainable": true,
-          "layer_name": "0"
-        },
-        {
-          "wb_shape": [
-            12,
-            6
-          ],
-          "activation": 1,
-          "trainable": true,
-          "layer_name": "1"
-        },
-        {
-          "wb_shape": [
-            6,
-            1
-          ],
-          "activation": 0,
-          "trainable": true,
-          "layer_name": "2"
-        }
+        12,
+        6,
+        1
       ],
-      "name": "H",
+      "activations": [
+        1,
+        1,
+        0
+      ],
       "offset": -13.62
     },
     {
+      "type": "a2aff",
+      "name": "C",
       "feature_size": 384,
       "layers": [
-        {
-          "wb_shape": [
-            384,
-            12
-          ],
-          "activation": 1,
-          "trainable": true,
-          "layer_name": "0"
-        },
-        {
-          "wb_shape": [
-            12,
-            6
-          ],
-          "activation": 1,
-          "trainable": true,
-          "layer_name": "1"
-        },
-        {
-          "wb_shape": [
-            6,
-            1
-          ],
-          "activation": 0,
-          "trainable": true,
-          "layer_name": "2"
-        }
+        12,
+        6,
+        1
       ],
-      "name": "C",
+      "activations": [
+        1,
+        1,
+        0
+      ],
       "offset": -1029.41
     },
     {
+      "type": "a2aff",
+      "name": "N",
       "feature_size": 384,
       "layers": [
-        {
-          "wb_shape": [
-            384,
-            12
-          ],
-          "activation": 1,
-          "trainable": true,
-          "layer_name": "0"
-        },
-        {
-          "wb_shape": [
-            12,
-            6
-          ],
-          "activation": 1,
-          "trainable": true,
-          "layer_name": "1"
-        },
-        {
-          "wb_shape": [
-            6,
-            1
-          ],
-          "activation": 0,
-          "trainable": true,
-          "layer_name": "2"
-        }
+        12,
+        6,
+        1
       ],
-      "name": "N",
+      "activations": [
+        1,
+        1,
+        0
+      ],
       "offset": -1484.87
     },
     {
+      "type": "a2aff",
+      "name": "O",
       "feature_size": 384,
       "layers": [
-        {
-          "wb_shape": [
-            384,
-            12
-          ],
-          "activation": 1,
-          "trainable": true,
-          "layer_name": "0"
-        },
-        {
-          "wb_shape": [
-            12,
-            6
-          ],
-          "activation": 1,
-          "trainable": true,
-          "layer_name": "1"
-        },
-        {
-          "wb_shape": [
-            6,
-            1
-          ],
-          "activation": 0,
-          "trainable": true,
-          "layer_name": "2"
-        }
+        12,
+        6,
+        1
       ],
-      "name": "O",
+      "activations": [
+        1,
+        1,
+        0
+      ],
       "offset": -2041.84
     }
   ]

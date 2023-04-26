@@ -10,15 +10,10 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 import json
 import os
-import sys
 
 import numpy as np
 
-if __package__ != 'panna.gvector':
-    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from lib.units_converter import distances_to_angstrom
-else:
-    from ..lib.units_converter import distances_to_angstrom
+from panna.lib.units_converter import distances_to_angstrom
 
 
 def requires_parameters(method):
@@ -27,7 +22,13 @@ def requires_parameters(method):
         for parameter in self._gvect_parameters:  # pylint: disable=protected-access
             if self.__getattr__(parameter) is None:
                 raise ValueError(f'Parameter {parameter} is not set')
+            if not self.units:
+                raise ValueError(
+                    f'Internal units have not been specified'
+                    'you might need to fix {self.__class__.__name__}.units'
+                    '= Angstrom')
         return method(self, *args, **kwargs)
+
     return check_parameters
 
 
@@ -46,13 +47,10 @@ class GvectBase(ABC):
         (the default value is False)
     pbc_directions: list of Boolean, optional
         pbc directions to override those in the json
-        (the default value is None)
 
     Notes
     -----
     self.units default is set to Angstrom 
-
-    _gvect_parameters emulate properties
     """
     # parameter, setter function
     _gvect_parameters = {}

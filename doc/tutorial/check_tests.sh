@@ -28,7 +28,7 @@ echo -n "Running training...  "
 python3 ../../src/panna/train.py --config input_files/train1.ini > train1.out 2> train1.err
 if [ $? -eq 0 ]; then
     echo OK
-    rm localhost_*.log delta_e.dat delta_e_std.dat train1.out train1.err
+    rm train1.out train1.err
 else
     echo FAIL, check the output/error files.
     exit 1
@@ -61,7 +61,7 @@ echo -n "Running RE-training...  "
 python3 ../../src/panna/train.py --config input_files/train2.ini > train2.out 2> train2.err
 if [ $? -eq 0 ]; then
     echo OK
-    rm localhost_*.log delta_e.dat delta_e_std.dat train2.out train2.err tf.log
+    rm train2.out train2.err tf.log
     rm -rf tutorial_train_2 saved_weights
 else
     echo FAIL, check the output/error files.

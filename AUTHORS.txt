@@ -1,4 +1,4 @@
-The PANNAdevs group, i.e. copyright holders 
+The PANNAdevs group, i.e. copyright holders
 are listed below in alphabetical order
 
 kucukben
@@ -10,4 +10,3 @@ yshaidu
 
 Other contributors
 Qingjie Li - VASP parser
-

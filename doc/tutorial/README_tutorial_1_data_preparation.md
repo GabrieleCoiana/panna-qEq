@@ -4,13 +4,18 @@ In this tutorial, we will walk through the steps necessary to
 convert the data that you have from your simulations into 
 a format suitable for PANNA training and evaluation steps.
 
-**NOTE:** All commands will assume to be run from the `doc/tutorial` directory.
+**NOTE:** All commands will assume to be run from the `doc/tutorial` directory and that you have installed PANNA in your environment running the command
+```
+pip install .
+```
+(or its equivalent for your environment) from the PANNA main folder.
+
 
 ### Introduction
 
-We will convert the output of your simulations into input files for PANNA 
+We will start by converting the output of your simulations into input files for PANNA 
 so that they can be used by train.py and evaluate.py scripts.
-This procedure is composed of 3 steps:
+This procedure is typically composed of 3 steps:
 
 * Extract the relevant information from your simulation output 
 (eg. atomic positions, energy, forces) and write it in `json` format compatible with PANNA.
@@ -18,14 +23,17 @@ This procedure is composed of 3 steps:
 for each atom with specified parameters and store them in a binary file.
 * Pack multiple descriptor files in TensorFlow record format compatible with PANNA.
 
+While precomputing the descriptors is typically advantageous, as we avoid repeating the same copmutation as data are reused, it is also possible to feed the simulations directly to PANNA. This however makes the training step more computationally intensive, and is only suggested for particular cases, where for example a particularly large dataset might would be reused fewer times during training.
+
 ---
 
 ### From simulation output to extracted information in json file
 
-Your simulation results may be stored in QE data_xml files 
+Your simulation results may be stored in Quantum ESPRESSO data_xml files 
 or you might be using one of the popular datasets such as ANI-1.
-First step is to extract the relevant information into a json file and how to do it strictly depends on the code you use to generate the data. 
-Here we will walk through the case of Quantum ESPRESSO and will summarize what to do in the case of ANI-1. 
+The first step is to extract the relevant information into a json file and how to do it strictly depends on the code you use to generate the data. 
+Here we will walk through the case of Quantum ESPRESSO and will summarize what to do in the case of ANI-1.
+For more converters, please check the Tools tutorial.
 Should you desire to generate new files from your own simulations with another code, 
 here are the fields required to be in your json file:
 
@@ -37,18 +45,19 @@ Each entry should contain (in this order):
     * A number label for the atom
     * A string identifying the species of the atom
     * A vector containing the coordinates of the atom, in cartesian or crystal coordinates.
-Example json entry: "atoms" : [[1,"C",[0.0, 0.0, 0.0]],[2,"C",[0.25, 0.25, 0.25]]]
+    * _Optional_ A vector containing the forces acting on the atom (in units consistent with energy and legth). This is only used if forces are a target of training [see the Training tutorial].
+    * Example json entry: "atoms" : [[1,"C",[0.0, 0.0, 0.0]],[2,"C",[0.25, 0.25, 0.25]]]
 * `energy` -- A list with 2 entries: the calculated energy of the simulation and the unit of energy such as eV. Example: "energy": [-13.6, "Ry"].
 
-#### Converting QE file to PANNA json
+#### Converting QE files to PANNA json
 
 For this purpose we use the tool qexml_parser.py in the `panna/tools` directory:
 ```
 python ../../src/panna/tools/parse_qexml.py -i path/to/directory/that/holds/qe/outdir -o path/to/write/the/panna/jsons
 ```
-This tool looks inside the specified input directory and finds all <prefix>.xml files that are stored in the same level of .save directories.
+This tool looks inside the specified input directory and finds all `.xml` files that are stored in the same level of .save directories.
 Then it creates a json file with the same name of the xml at the position of the output directory.
-The extension of the generated json is ".example".
+The extension of the generated json is `.example`.
 If you want the names of json files to be unique, and do not care them to be related to QE prefix, 
 you can use the hashing function as an option:
 ```
@@ -61,15 +70,12 @@ cd doc/tutorial
 python ../../src/panna/tools/parse_qexml.py -i tutorial_data/qe_xmls -o qe_sims
 ls qe_sims
 ```
-Last command should list all the 10 example jsons. Visualize one to see the fields described above.
-The file format is not intended to be human readable but in this simple case you can.
-Note that we  have added two fields in the jsons that are not mandatory (ie PANNA does not use them) but 
-you might find handy: `source` holds the location of the source xml file and `key` holds the prefix used in the qe calculation.
+Last command should list all the 13 example jsons. Visualize one to see the fields described above.
 Once these json files are ready, you can proceed with the next step of converting them to local descriptors. 
 
 #### Converting ANI set to PANNA json
 
-Instead of QE data, you can use ANI-1 set that is distributed in the following address in hdf5 format: 
+Instead of QE data, you can use the ANI-1 dataset that is distributed at the following address in hdf5 format: 
 ```
 https://github.com/isayev/ANI1_dataset
 ```
@@ -87,19 +93,21 @@ This tool will create a folder for each molecule type and inside it one `.exampl
 ### From example json to input descriptor files
 
 We now assume that you followed the previous step and 
-10 example json files have been created and are stored in one folder 
+some example json files have been created and are stored in one folder 
 called `simulations`.
 
-We will now convert the information here to a representation that can be understood by the network,
+We will now convert the information to a fixed size representation of the local atomic environment that can be understood by the network,
 which in general can be any input descriptor, but in the case of atomistic simulations is often a
 symmetry function such as Behler-Parinello G vectors.
-The tool to use for this purpose is `gvect_calculator.py`.
+The code to use for this purpose is called `gvect_calculator.py`, and after installing panna can be inkoved simply as `panna_gvect_calculator` from command line.
 It needs an input file defining the necessary parameters and it will generate G vectors and write them to files in binary format.
 You can see the input we will use in this tutorial here `input_files/gvect_sample.ini`.
 and below is the explanation of its content:
+
 **IMPORTANT NOTE:** Internal units of PANNA are eV and Angstrom. Therefore all the information given to the code
 will be converted to these units. For example, the json files might use Ry and a.u. but the binary G-vector files will
 be stored in eV and Angstrom.
+
 ##### [IO_INFORMATION]
 
 * `input_json_dir` -- The directory containing the example `json` files (relative to the directory you run the program from).
@@ -191,7 +199,7 @@ The data (where available) is stored in raw binary format in the following order
 
 ### Converting binary input descriptors to tfrecord files
 
-Once the binary files with the gvectors have been created, we package them for a very efficient read in process. 
+Once the binary files with the gvectors have been created, we package them for a very efficient read process. 
 We package them in a format called TensorFlow Record (tfr), which allows the underlying TensorFlow engine to rapidly load a lot of data during training. This comes very handy with mini batch training on large amounts of data.
 To convert the binary gvectors to tfr's, we run the code `tfr_packer.py` with an appropriate input file.
 

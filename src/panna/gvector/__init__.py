@@ -9,9 +9,9 @@
 Gvector calculation and packer module
 """
 
-from .binary_encoder import binary_encoder
-from .gvect_bp import GvectBP
-from .gvect_mbp import GvectmBP
+from panna.gvector.binary_encoder import binary_encoder
+from panna.gvector.gvect_bp import GvectBP
+from panna.gvector.gvect_mbp import GvectmBP
 
 __all__ = [
     'binary_encoder', 'GvectmBP', 'GvectBP'

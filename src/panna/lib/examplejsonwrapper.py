@@ -9,7 +9,6 @@ import json
 import logging
 import os
 from string import Template
-import mendeleev
 
 import numpy as np
 
@@ -34,7 +33,9 @@ class ExampleJsonWrapper():
     # TODO it would be nice to parse the atom key separately and have a setter
     # for the unit of length such as later one can simply set the units and the
     # whole class will act consequently
-    def __init__(self, file_name, atomic_sequence=None):
+    def __init__(self, file_name, atomic_sequence=None,
+                 species_gaussian_width=None,
+                 atomic_hardness=None):
 
         with open(file_name) as file_stream:
             example = json.load(file_stream)
@@ -49,6 +50,10 @@ class ExampleJsonWrapper():
             for atom in self._example['atoms']:
                 species.append(atom[1])
             self._atomic_sequence = list(set(species))
+        if species_gaussian_width:
+            self._species_gaussian_width = species_gaussian_width
+        else:
+            self._species_gaussian_width = []
 
     @property
     def unit_of_length(self):
@@ -189,6 +194,18 @@ class ExampleJsonWrapper():
         return np.asarray(pa_energy, dtype=float)
 
     @property
+    def atomic_charges(self):
+        """ recover the per atom charge
+        """
+        charges = []
+        for atom in self._example['atoms']:
+            if len(atom) > 4:
+                charges.append(atom[4])
+            else:
+                charges.append(0.0)
+        return np.asarray(charges, dtype=np.float)
+
+    @property
     def ev_energy(self):
         """ return the energy in eV"""
         return self.energy * energy_to_ev(self.unit_of_energy)
@@ -203,7 +220,7 @@ class ExampleJsonWrapper():
     @property
     def key(self):
         """ a unique key, for now simple file name"""
-        return os.path.basename(self._file).split('.example')[0]
+        return os.path.basename(self._file).split('.')[0]
 
     @property
     def number_of_atoms(self):
@@ -228,12 +245,52 @@ class ExampleJsonWrapper():
         """number of species"""
         return len(self.species)
     @property
-    def atomic_number(self):
-        ''' return atomic number of atomc in the simulation box'''
-        at_num = []
+    def tmp_species_gaussian_width(self):
+        """ converter string atomic type to value
+        """
+        return {
+            x: y
+            for x, y in zip(self._atomic_sequence, self._species_gaussian_width)}
+
+    @property
+    def per_atom_gaussian_width(self):
+        """ recover the per atom gaussian width
+        """
+        alpha = []
+
+        for count, atom in enumerate(self._example['atoms']):
+            specie = atom[1]
+            alpha.append(self.tmp_species_gaussian_width[specie])
+        return np.asarray(alpha, dtype=np.float)
+    @property
+    def tmp_atomic_hardness(self):
+        """ converter string atomic type to value
+        """
+        return {
+            x: y
+            for x, y in zip(self._atomic_sequence, self._atomic_hardness)}
+
+    @property
+    def per_atom_hardness(self):
+        """ recover the per atom hardness
+        """
+        hardness = []
         for atom in self._example['atoms']:
-            at_num.append(mendeleev.element(atom[1]).atomic_number)
-        return np.asarray(at_num)
+            specie = atom[1]
+            hardness.append(self.tmp_atomic_hardness[specie])
+        return np.asarray(hardness, dtype=np.float)
+
+    @property
+    def total_charge(self):
+        """ return the total charge """
+        try:
+            q = self._example['total_charge']
+        except:
+            q = 0.0
+
+        if isinstance(q, str):
+            q = q.strip('\"')
+        return float(q)
 
 
     def to_lammps(self):
@@ -340,7 +397,7 @@ class ExampleJsonWrapper():
             tmp = 'K_POINTS automatic\n {} 1 1 1'
             n_kpoints = np.round(
                 kpoints_density
-                / np.linalg.norm(self.angstrom_lattice_vectors, axis=1)).astype(int)
+                / np.linalg.norm(self.angstrom_lattice_vectors, axis=1)).astype(np.int)
             tmp = tmp.format(' '.join(n_kpoints.astype(str)))
             qe_dict['K_POINTS'] = Template(tmp)
         elif kpoints_grid:

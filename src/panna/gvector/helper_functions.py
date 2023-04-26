@@ -6,7 +6,7 @@
 # For further information on the license, see the LICENSE.txt file        #
 ###########################################################################
 """
-common helper functions used to compute the gvectors
+Common helper functions used to compute the gvectors
 """
 import numpy as np
 
@@ -49,7 +49,6 @@ def G_angular_mBP(r_ij, r_ik, theta_jik, R_p, theta_s, eta_ang, zeta, Rc_ang):
 
     return G
 
-
 def GdG_angular_mBP(r_ij, r_ik, theta_jik, R_p, cs, ss, eta_ang, zeta, Rc_ang,
                     prefactor):
     """
@@ -65,10 +64,10 @@ def GdG_angular_mBP(r_ij, r_ik, theta_jik, R_p, cs, ss, eta_ang, zeta, Rc_ang,
     # radial center of gaussian
     r_cent = (r_ij + r_ik) * 0.5 - R_p
     # shortnames
-    # cs=np.cos(theta_s)
-    # ss=np.sin(theta_s)
-    ct = np.cos(theta_jik)  # cos_theta_jik
-    st = np.sqrt(1 - ct**2 + eps * ss**2)  # sin_theta_jik_approx
+    # cs=np.cos(theta_s) ;
+    # ss=np.sin(theta_s) ;
+    ct = np.cos(theta_jik)  #cos_theta_jik
+    st = np.sqrt(1 - ct**2 + eps * ss**2)  #sin_theta_jik_approx
     # normalization of eps correction
     norm = 1.0 / (1. + np.sqrt(1. + eps * ss**2))
     # components of G = Gauss x CosTerm x CutTerms
@@ -77,20 +76,35 @@ def GdG_angular_mBP(r_ij, r_ik, theta_jik, R_p, cs, ss, eta_ang, zeta, Rc_ang,
     # cos_approx = ct*cs + st*ss
     onepcos = 1.0 + ct * cs + st * ss
     CosTerm = (onepcos * norm)**zeta
+
     Cut1 = _cutoff(r_ij, Rc_ang)
     Cut2 = _cutoff(r_ik, Rc_ang)
     G = Gauss * CosTerm * prefactor
+    #dG_cos_tmp = Gauss * dCosTerm * prefactor
+
+
     Cut1xCut2 = Cut1 * Cut2
     # derivatives
     # dGi/drj = A r_ij + B r_ik
     # because  dTheta/dr_ij form CosTerm mixes these two components
     # So A has contribution from all three components while B comes from CosTerm only
-    dcos = zeta / onepcos * (cs - ss * ct / st)
+
+    #the commented dcos has division by zero when
+    #theta_s = 0 or pi since the regularization has no effects. 
+
+    #Safer to write this way so that if ss = 0 and theta_ijk = 180, 
+    #onepcos = 0 + 1e-8
+    #st = 0
+    # Therefore, (cs * st - ss * ct) == 0, hence no divergence
+    #dcos = zeta / onepcos * (cs  - ss * ct / st)
+    dcos = zeta / (onepcos * st + 1e-8) * (cs * st - ss * ct)
     # A
-    dG1 = - G / r_ij * \
-        (eta_ang * r_cent * Cut1xCut2
-         + dcos * ct / r_ij * Cut1xCut2
-         + _dcutoff(r_ij, Rc_ang) * Cut2)
+
+    dG1 = -G/r_ij * \
+        ( eta_ang*r_cent * Cut1xCut2 \
+           + dcos * ct /r_ij * Cut1xCut2 \
+           + _dcutoff(r_ij, Rc_ang)*Cut2 )
+
     # First one from derivative of Gauss,
     # Second term from dCosTerm and below with some cancellations:
     # dcos_apprx/dr_j_a = (-sintheta) * (cs - ss*ct /st) \
@@ -107,16 +121,16 @@ def GdG_angular_mBP(r_ij, r_ik, theta_jik, R_p, cs, ss, eta_ang, zeta, Rc_ang,
     # j--> k dGi/drk =  A'r_ik + B r_ij
 
     # A'
-    dG3 = - G / r_ik * \
-        (eta_ang * r_cent * Cut1xCut2
-         + dcos * ct / r_ik * Cut1xCut2
-         + _dcutoff(r_ik, Rc_ang) * Cut1)
+    dG3 = -G/r_ik * \
+          ( eta_ang*r_cent * Cut1xCut2 \
+           + dcos * ct /r_ik * Cut1xCut2 \
+           + _dcutoff(r_ik, Rc_ang) * Cut1 )
     # B is symmetric
 
     # Fixing the G values
     G *= Cut1xCut2
-    return (G, dG1, dG2, dG3)
 
+    return (G, dG1, dG2, dG3)
 
 def G_angular_BP(r_ij, r_ik, r_jk, theta_ijk, eta_ang, zeta, lamb, Rc_ang):
     G = np.exp(-eta_ang * (r_ij**2 + r_ik**2 + r_jk**2))

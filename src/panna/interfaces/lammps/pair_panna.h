@@ -28,7 +28,6 @@ public:
   void settings(int, char **);
   void coeff(int, char **);
   void init_style();
-  void init_list(int, class NeighList *);
   double init_one(int, int);
   void write_restart(FILE *);
   void read_restart(FILE *);
@@ -42,31 +41,32 @@ public:
   int get_input_line(std::ifstream*, std::string*, std::string*);
 
   void compute_gvect(int, double**, int*, int*, int, double*, double*);
-  double Gradial_d(double, int, double*);
-  double Gangular_d(double, double, double, int, int, double*);
+  // double Gradial_d(double, int, double*);
+  // void Grad_fill(double, double, double, double , int, int  , int , double*, double*);
+  // double Gangular_d(double, double, double, int, int, double*);
   double compute_network(double*, double*, int);
   // double compute_network(double*, double*, int, int);
 
   struct parameters{
     int Nspecies;
     // Gvector parameters
-    float *eta_rad;
-    float Rc_rad;
-    float Rs0_rad;
-    float Rsst_rad;
+    double *eta_rad;
+    double Rc_rad;
+    double Rs0_rad;
+    double Rsst_rad;
     int RsN_rad;
-    float *eta_ang;
-    float Rc_ang;
-    float Rs0_ang;
-    float Rsst_ang;
+    double *eta_ang;
+    double Rc_ang;
+    double Rs0_ang;
+    double Rsst_ang;
     int RsN_ang;
     int *zeta;
     int ThetasN;
     std::string* species;
     int gsize;
-    float * Rs_rad;
-    float * Rs_ang;
-    float * Thetas;
+    double * Rs_rad;
+    double * Rs_ang;
+    double * Thetas;
 
     // Network parameters
     int *Nlayers;
@@ -74,17 +74,17 @@ public:
     int **layers_activation;
 
     // Useful precalculated quantities
-    float cutmax;
-    float *twoeta_rad;
-    float *zeta_half;
-    float iRc_rad;
-    float iRc_rad_half;
-    float iRc_ang;
-    float iRc_ang_half;
-    float *Rsi_rad;
-    float *Rsi_ang;
-    float *Thi_cos;
-    float *Thi_sin;
+    double cutmax;
+    double *twoeta_rad;
+    double *zeta_half;
+    double iRc_rad;
+    double iRc_rad_half;
+    double iRc_ang;
+    double iRc_ang_half;
+    double *Rsi_rad;
+    double *Rsi_ang;
+    double *Thi_cos;
+    double *Thi_sin;
     int **typsh;
   };
 

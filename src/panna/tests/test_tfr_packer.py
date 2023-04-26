@@ -13,12 +13,8 @@ import io
 
 import numpy as np
 
-if __package__ != 'panna':
-    from tfr_packer import main as tfr_packer
-    from tests.utils import ROOT_FOLDER
-else:
-    from .tfr_packer import main as tfr_packer
-    from .tests.utils import ROOT_FOLDER
+from panna.tfr_packer import main as tfr_packer
+from panna.tests.utils import ROOT_FOLDER
 
 
 class Test_Tft_Packer(unittest.TestCase):

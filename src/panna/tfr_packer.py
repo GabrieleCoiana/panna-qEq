@@ -14,16 +14,10 @@ import sys
 
 import numpy as np
 
-if __package__ != 'panna':
-    import gvector
-    from lib.tfr_data_structure import tfr_writer, example_tf_packer
-    from lib import init_logging
-    from lib.example_bin import load_example
-else:
-    from . import gvector
-    from .lib.tfr_data_structure import tfr_writer, example_tf_packer
-    from .lib import init_logging
-    from .lib.example_bin import load_example
+from panna import gvector
+from panna.lib.tfr_data_structure import tfr_writer, example_tf_packer
+from panna.lib import init_logging
+from panna.lib.example_bin import load_example
 
 # logger
 logger = logging.getLogger('panna')
@@ -42,15 +36,16 @@ def recover_bin_files(in_path):
 
 
 def packer_func(gv_param):
-    """ return the packer function with all parameters set
-    """
+    """Return the packer function with all parameters set."""
     derivatives = gv_param.getboolean('include_derivatives', False)
     sparse_derivatives = gv_param.getboolean('sparse_derivatives', False)
     per_atom_quantity = gv_param.getboolean('include_per_atom_quantity', False)
+    long_range_el = gv_param.getboolean('long_range_el', False)
     return partial(example_tf_packer,
                    forces=derivatives,
                    sparse_dgvect=sparse_derivatives,
-                   per_atom_quantity=per_atom_quantity)
+                   per_atom_quantity=per_atom_quantity,
+                   long_range_el=long_range_el)
 
 
 def partition_files(files, partition_size):
@@ -68,7 +63,7 @@ def partition_files(files, partition_size):
 
 
 def tfr_packer_writer(files, packer, out_path, prefix=None):
-    """ save the data in tfrs in the out_path
+    """Save the data in tfrs in the out_path.
 
     Parameters
     ----------

@@ -6,7 +6,7 @@
 # For further information on the license, see the LICENSE.txt file        #
 ###########################################################################
 import numpy as np
-
+import itertools
 
 def orthogonal_vector(input_vector):
     """ calculate a random orthogonal unit vector to input_vector
@@ -115,3 +115,64 @@ def replicas_max_idx(lattice_vectors, Rc, pbc=[True, True, True]):
             max_indices[idx] = int(np.ceil(Rc * b_length))
 
     return max_indices
+
+
+def make_replicas(positions, lattice_vectors, Rc, pbc=[True, True, True]):
+    """ Function computing directly all the replicas needed to contain
+        all atom images within the cutoff.
+        Also wraps original positions for convenience
+
+    Parameters
+    ----------
+    lattice_vectors: lattice vectors as matrix (a1, a2, a3)
+    Rc: maximum radial cutoff that you want to take in to account
+    pbc: Normally pbc are recovered from lattice vector,
+         if in the lattice_vectors a direction is set to zero
+         then no pbc is applied in that direction.
+         This argument allow you to turn off specific directions
+         in the case where that specific direction has a lattice vector
+         greater then zero.
+         To achieve this pass an array of 3 logical value (one for each
+         direction). False value turn off that specific direction.
+         Default is true in every direction.
+         eg. pbc = [True, False, True] => pbc along a1 and a3
+
+    Returns
+    -------
+    positions: the wrapped atomic positions
+    replicas: numpy array of displacement vectors for each replica.
+    """
+    lattice_vectors = np.asarray(lattice_vectors)
+    # wrap the atoms in the unit cell
+    if (lattice_vectors == 0).all():
+        pass
+    else:
+        crystal_coord = positions @ np.linalg.inv(lattice_vectors)
+        crystal_coord = crystal_coord % 1.0
+        positions = crystal_coord @ lattice_vectors
+
+    # compute how many cell replica we need in each direction
+    max_indices = replicas_max_idx(lattice_vectors, Rc, pbc)
+    l_max, m_max, n_max = max_indices
+    l_list = range(-l_max, l_max + 1)
+    m_list = range(-m_max, m_max + 1)
+    n_list = range(-n_max, n_max + 1)
+    # create a matrix with all the idx of the extra cell we need
+    replicas = np.asarray(list(itertools.product(l_list, m_list, n_list)))
+
+    # translation vectors needed to map each atom in the unit cell to its replica
+    # @ means matrix multiplication
+    replicas = replicas @ lattice_vectors
+
+    # Keep only the replicas that are actually inside cutoff
+    # Since we use all atoms in the tf code, this can be a good speedup
+    corners = np.asarray(list(itertools.product([0,1],[0,1],[0,1]))) @ lattice_vectors
+    keep_replicas = []
+    for r in replicas:
+        distances = np.sum((corners[:,np.newaxis,:] - \
+                            corners[np.newaxis,:,:] - \
+                            r[np.newaxis,np.newaxis,:])**2,axis=2)
+        if np.min(distances)<Rc**2:
+            keep_replicas.append(r)
+
+    return positions, np.asarray(keep_replicas)

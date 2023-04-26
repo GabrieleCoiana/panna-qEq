@@ -8,8 +8,10 @@
 
 import itertools
 import logging
+from functools import partial
 
 import numpy as np
+import tensorflow as tf
 
 from .helper_functions import G_angular_mBP, G_radial, GdG_angular_mBP, GdG_radial
 from .gvect_base import GvectBase, requires_parameters
@@ -35,13 +37,12 @@ class GvectmBP(GvectBase):
     -----
       gvectmbp.units must be setted before usage!
       for a list of parameters that must be set:
-      gvectmbp.descriptor_parameters. 
+      gvectmbp.descriptor_parameters.
       If you are adding a new parameter you need to add it in the following functions too:
       _gvector_parameters dictionary
       parse_parameters func
       gvect func
       __call__ func
-
     """
 
     name = 'mBP'
@@ -131,7 +132,7 @@ class GvectmBP(GvectBase):
             logger.info('Radial-angular Gaussian centers are set by Rs_ang_list')
             Rs_ang = np.asarray(Rs_ang)
         else:
-            logger.info('Radial-angular Gaussian centers are'
+            logger.info('Radial-angular Gaussian centers are '
                         'set by Rs0_ang, Rc_ang, RsN_ang')
             Rsst_ang = (Rc_ang - Rs0_ang) / RsN_ang
             Rs_ang = np.arange(Rs0_ang, Rc_ang, Rsst_ang)
@@ -225,6 +226,15 @@ class GvectmBP(GvectBase):
 
             For all the other parameters refer to the article
 
+        kwargs:
+            pbc: Normally pbc are recovered from file,
+                 if in the lattice_vectors a direction is set to zero
+                 then no pbc is applied in that direction.
+                 This argument allow you to turn off specific directions
+                 by passing an array of 3 logical value (one for each
+                 direction). False value turn off that specific direction
+                 eg. pbc = [True, False, True] => pbc along a1 and a3
+
         Return:
             dict, class has two flags: compute_dgvect, sparse_dgvect
             if False, False:
@@ -244,7 +254,7 @@ class GvectmBP(GvectBase):
 
         note:
             All kind of PBC : 1D, 2D and 3D are implemented..
-            Check the function "replicas_max_idx" 
+            Check the function "replicas_max_idx"
 
         """
         output = {'key': key}
@@ -623,3 +633,348 @@ class GvectmBP(GvectBase):
 
             output['Gvect'] = np.asarray(Gs).tolist()
             return output
+
+    @tf.function(jit_compile=True,\
+        input_signature=[[tf.TensorSpec(shape=(), dtype=tf.int32),\
+                         tf.TensorSpec(shape=(None), dtype=tf.int32),\
+                         tf.TensorSpec(shape=(None,3), dtype=tf.float32),\
+                         tf.TensorSpec(shape=(None,None,None), dtype=tf.int32),\
+                         tf.TensorSpec(shape=(None,None,2), dtype=tf.int32),\
+                         tf.TensorSpec(shape=(None,None,None,3), dtype=tf.float32),\
+                         tf.TensorSpec(shape=(None,None,None), dtype=tf.float32),\
+                         tf.TensorSpec(shape=(None,None,None), dtype=tf.float32),\
+                         tf.TensorSpec(shape=(None,None,None), dtype=tf.float32)]])
+    def tf_g(self, x):
+        """Operating on each element of the batch.
+
+        x elements: 0 - nat
+                    1 - species
+                    2 - positions
+                    3 - indices of nn
+                    4 - number of indices per atom
+                    5 - ij vectors
+                    6 - ij radii
+                    7 - mask of smaller cutoff
+                    8 - mask or larger cutoff
+        """
+        nats_padded = tf.shape(x[1])[0]
+        # Temporary flag to choose code version
+        RMOD = 2
+
+        # define shorter names
+        # and make sure arrays are arrays
+        n_species = self.number_of_species
+        eta_rad = np.asarray(self.eta_rad, dtype=np.float32)
+        Rc_rad = np.asarray(self.Rc_rad, dtype=np.float32)
+        Rs_rad = np.asarray(self.Rs_rad, dtype=np.float32)
+        if len(self.eta_ang)==len(self.Rs_ang):
+            eta_ang = np.asarray(self.eta_ang, dtype=np.float32)
+        else:
+            eta_ang = self.eta_ang*np.ones(len(self.Rs_ang), dtype=np.float32)
+        Rc_ang = np.asarray(self.Rc_ang, dtype=np.float32)
+        Rs_ang = np.asarray(self.Rs_ang, dtype=np.float32)
+        if len(self.zeta)==len(self.Thetas):
+            zeta = np.asarray(self.zeta, dtype=np.float32)
+        else:
+            zeta = self.zeta*np.ones(len(self.Thetas), dtype=np.float32)
+        Thetas = np.asarray(self.Thetas, dtype=np.float32)
+        gsize = self.gsize
+        n_Rad = len(self.Rs_rad)
+        n_Ang_r = len(self.Rs_ang)
+        n_Ang_a = len(Thetas)
+        n_Ang = n_Ang_r * n_Ang_a
+        angsize = n_Ang * int(n_species*(n_species+1)/2)
+
+        # Cut inputs to the actual atoms
+        n_atoms = x[0]
+        species = x[1][:n_atoms]
+        positions = x[2][:n_atoms]
+        nn_inds = x[3][:n_atoms]
+        nn_num = x[4][:n_atoms]   # WOULD IT BE USEFUL TO USE THIS?
+        nn_vecs = x[5][:n_atoms]
+        nn_r = x[6][:n_atoms]
+        if Rc_ang<=Rc_rad:
+            maskang = x[7][:n_atoms]
+            maskrad = x[8][:n_atoms]
+        else:
+            maskang = x[8][:n_atoms]
+            maskrad = x[7][:n_atoms]
+
+        rij = tf.reshape(nn_r,[n_atoms,n_species,-1,1])
+        nnmax = tf.shape(rij)[2]
+        maskrad = tf.reshape(maskrad,[n_atoms,n_species,-1,1])
+        centers = tf.reshape(Rs_rad, [1,1,1,-1])
+        etas = tf.reshape(eta_rad, [1,1,1,-1])
+        if self.compute_dgvect:
+            Grad, dGrad_t = tf_GdG_radial(rij,centers,etas,Rc_rad)
+            Grad = tf.reshape(tf.reduce_sum(maskrad*Grad, axis=2),[n_atoms,-1])
+            # Not putting the multiplier as I don't think it's needed...
+            # Multiplying with the displacements
+            dGrad_t = tf.reshape(maskrad*dGrad_t,[n_atoms,n_species,-1,n_Rad,1]) *\
+                      tf.reshape(nn_vecs,[n_atoms,n_species,-1,1,3])
+            # Summing all derivatives w.r.t i
+            dGrad = tf.reshape(tf.reduce_sum(dGrad_t, axis=2),[n_atoms,-1,3])
+            # Putting in the right place
+            dGrad = tf.einsum('ijl,ik->ijkl',dGrad,tf.eye(n_atoms))
+            # Adding all the derivatives wrt j
+            # For each nn we scatter to the atom in the right position full list
+            # Then we reshuffle this to be the right contribution in the dG matrix
+            ind1 = tf.tile(tf.reshape(tf.range(n_atoms),[-1,1,1]),[1,n_species,nnmax])
+            ind2 = tf.tile(tf.reshape(tf.range(n_species),[1,-1,1]),[n_atoms,1,nnmax])
+            inds = tf.stack([ind1,ind2,nn_inds],axis=-1)
+            dGradj = tf.zeros([n_atoms,n_species,n_atoms,n_Rad,3])
+            dGradj = tf.tensor_scatter_nd_add(dGradj,inds,dGrad_t)
+            dGradj = tf.reshape(tf.transpose(dGradj, perm=[0,1,3,2,4]),[n_atoms,-1,n_atoms,3])
+            dGrad = dGrad - dGradj
+        else:
+            Grad = tf_G_radial(rij,centers,etas,Rc_rad)
+            Grad = tf.reshape(tf.reduce_sum(maskrad*Grad, axis=2),[n_atoms,-1])
+
+        
+        # In this version, we use map_fn on GdG_ang, and process each atom on its own
+        # We also do all of the processing inside GdG
+        # This clearly uses less memory, but might parallelize less
+        # Shapes should be [nat,nsp,nsp,nn,nn,gangR,gangA]
+        # but the first dimension is mapped over, so we reshape:
+        Rs_ang = tf.reshape(Rs_ang,[1,1,1,1,-1,1])
+        eta_ang = tf.reshape(eta_ang,[1,1,1,1,-1,1])
+        zeta = tf.reshape(zeta,[1,1,1,1,1,-1])
+        CTh = tf.reshape(tf.cos(Thetas),[1,1,1,1,1,-1])
+        STh = tf.reshape(tf.sin(Thetas),[1,1,1,1,1,-1])
+        # Mask to remove the j==k case
+        maskjk = tf.reshape(tf.ones([n_species,n_species,nnmax,nnmax]) -\
+                          (tf.reshape(tf.eye(n_species),[n_species,n_species,1,1]) *\
+                            tf.reshape(tf.eye(nnmax),[1,1,nnmax,nnmax])), \
+                          [n_species,n_species,nnmax,nnmax,1,1])
+        # Input for the mapped function:
+        input_stack = (nn_r,nn_vecs,maskang,nn_inds,tf.range(n_atoms))
+        if self.compute_dgvect:
+            angf = tf_GdG_angular_mBP_1at
+        else:
+            angf = tf_G_angular_mBP_1at
+        angf = partial(angf, Rs_ang, CTh, STh, eta_ang, zeta, \
+                   Rc_ang, n_Ang_r, n_Ang_a, maskjk, n_atoms, n_species, nnmax)
+        # Defining partial and signature for [without initial n_atoms]:
+        angf = tf.function(angf, input_signature=((
+                        tf.TensorSpec(shape=[None,None],dtype=tf.float32),\
+                        tf.TensorSpec(shape=[None,None,3],dtype=tf.float32),\
+                        tf.TensorSpec(shape=[None,None],dtype=tf.float32),\
+                        tf.TensorSpec(shape=[None,None],dtype=tf.int32),\
+                        tf.TensorSpec(shape=[],dtype=tf.int32)),),\
+                        jit_compile=True)
+
+        # Both map_fn and vectorized_map work here:
+        # Vect. seems to have better performance, so it is enabled here
+        # But map uses less memory, so we might enable it with a switch in the future 
+        if self.compute_dgvect:
+            Gang, dGang = tf.vectorized_map(angf,input_stack)
+        else:
+            Gang = tf.vectorized_map(angf,input_stack)
+
+        # Grad = tf.zeros([n_atoms,n_Rad])
+        # Gang = tf.zeros([n_atoms,n_Ang])
+        Gs = tf.concat([Grad,Gang], axis=1)
+        padded_gs = tf.concat([Gs, tf.zeros([nats_padded-n_atoms,gsize])], axis=0)
+        if not self.compute_dgvect:
+            return padded_gs
+
+        # dGrad = tf.zeros([n_atoms,n_Rad,n_atoms,3])
+        # dGang = tf.zeros([n_atoms,n_Ang,n_atoms,3])
+        dGs = tf.concat([dGrad,dGang], axis=1)
+        padded_dgs = tf.concat([tf.reshape(dGs,[-1]), \
+                             tf.zeros((nats_padded**2-n_atoms**2)*gsize*3)],axis=0)
+        #Temp in place of gs
+        # padded_gs = tf.random.normal([nats_padded,gsize])
+        # padded_dgs = tf.random.normal([nats_padded*gsize*nats_padded*3])
+        return padded_gs, padded_dgs
+
+@tf.function(jit_compile=True,
+    input_signature=[tf.TensorSpec(shape=(None,None,None,1), dtype=tf.float32),\
+                     tf.TensorSpec(shape=(), dtype=tf.float32)])
+def tf_cutoffR(r_ij, r_c):
+    return 0.5 * (1.0 + tf.cos(np.pi * r_ij / r_c))
+
+
+@tf.function(jit_compile=True,
+    input_signature=[tf.TensorSpec(shape=(None,None,None,1), dtype=tf.float32),\
+                     tf.TensorSpec(shape=(), dtype=tf.float32)])
+def tf_dcutoffR(r_ij, r_c):
+    return 0.5 * np.pi * tf.sin(np.pi * r_ij / r_c) / r_c
+
+
+@tf.function(jit_compile=True,
+    input_signature=[tf.TensorSpec(shape=(None,None,None,1), dtype=tf.float32),\
+                     tf.TensorSpec(shape=(1,1,1,None), dtype=tf.float32),\
+                     tf.TensorSpec(shape=(1,1,1,None), dtype=tf.float32),\
+                     tf.TensorSpec(shape=(), dtype=tf.float32)])
+def tf_G_radial(r_ij, R_s, eta_rad, Rc_rad):
+    return tf.exp(-eta_rad * (r_ij - R_s)**2) * tf_cutoffR(r_ij, Rc_rad)
+
+
+@tf.function(jit_compile=True,
+    input_signature=[tf.TensorSpec(shape=(None,None,None,1), dtype=tf.float32),\
+                     tf.TensorSpec(shape=(1,1,1,None), dtype=tf.float32),\
+                     tf.TensorSpec(shape=(1,1,1,None), dtype=tf.float32),\
+                     tf.TensorSpec(shape=(), dtype=tf.float32)])
+def tf_GdG_radial(r_ij, R_s, eta_rad, Rc_rad):
+    sm = 1e-20
+    Gauss = tf.exp(-eta_rad * (r_ij - R_s)**2)
+    cutoff = tf_cutoffR(r_ij, Rc_rad)
+    g_rad = Gauss * cutoff
+    dg_rad = (tf_dcutoffR(r_ij, Rc_rad) + \
+              (2.0 * eta_rad * cutoff * (r_ij - R_s))) *\
+             Gauss / (r_ij + sm)
+    return g_rad, dg_rad
+
+
+@tf.function(jit_compile=True,
+    input_signature=[tf.TensorSpec(shape=(None,None), dtype=tf.float32),\
+                     tf.TensorSpec(shape=(), dtype=tf.float32)])
+def tf_cutoffA_1a(r_ij, r_c):
+    return 0.5 * (1.0 + tf.cos(np.pi * r_ij / r_c))
+
+
+@tf.function(jit_compile=True,
+    input_signature=[tf.TensorSpec(shape=(None,None), dtype=tf.float32),\
+                     tf.TensorSpec(shape=(), dtype=tf.float32)])
+def tf_dcutoffA_1a(r_ij, r_c):
+    return 0.5 * np.pi * tf.sin(np.pi * r_ij / r_c) / r_c
+
+
+# Version working on 1 atom at a time, for map_fn/vectorized_map
+def tf_G_angular_mBP_1at(R_p, cs, ss, eta_ang, zeta, Rc_ang, n_Ang_r, n_Ang_a, mask2, \
+                           n_atoms, n_species, nnmax, x):
+    r = x[0]
+    vecs = x[1]
+    mask1 = x[2]
+    nn_inds = x[3]
+    n = x[4]
+    # the correction to make second derivative continuous
+    eps = 1e-3
+    # Small value for normalization
+    sm = 1e-20
+    r_ij = tf.reshape(r,[n_species,1,nnmax,1,1,1])
+    r_ik = tf.reshape(r,[1,n_species,1,nnmax,1,1])
+    rij_vec = tf.reshape(vecs,[n_species,1,nnmax,1,1,1,3])
+    rik_vec = tf.reshape(vecs,[1,n_species,1,nnmax,1,1,3])
+    costheta_jik = tf.reduce_sum(rij_vec*rik_vec, axis=6) / (r_ij*r_ik + sm)
+    mask = tf.reshape(mask1,[n_species,1,nnmax,1,1,1]) *\
+           tf.reshape(mask1,[1,n_species,1,nnmax,1,1]) *\
+           mask2
+    # radial center of gaussian
+    r_cent = (r_ij + r_ik) * 0.5 - R_p
+    ct = costheta_jik  # cos_theta_jik
+    st = tf.sqrt(1 - ct**2 + eps * ss**2)  # sin_theta_jik_approx
+    # normalization of eps correction
+    norm = 1.0 / (1. + tf.sqrt(1. + eps * ss**2))
+    # components of G = Gauss x CosTerm x CutTerms
+    Gauss = 2.0 * tf.exp(-eta_ang * r_cent**2)
+    onepcos = 1.0 + ct * cs + st * ss
+    CosTerm = (onepcos * norm)**zeta
+    Cut = tf_cutoffA_1a(r, Rc_ang)
+    Cut1 = tf.reshape(Cut,[n_species,1,nnmax,1,1,1])
+    Cut2 = tf.reshape(Cut,[1,n_species,1,nnmax,1,1])
+    G = mask * Gauss * CosTerm * Cut1 * Cut2
+    G = tf.reshape(tf.reduce_sum(G,[2,3]),[n_species,n_species,-1])
+    Gang = tf.concat([(2.0 - int(s1==s2)) * 0.5 * G[s1,s2] \
+                       for s1 in range(n_species) \
+                         for s2 in range(s1,n_species)],axis=0)
+    return Gang
+
+
+# Version working on 1 atom at a time, for map_fn/vectorized_map
+def tf_GdG_angular_mBP_1at(R_p, cs, ss, eta_ang, zeta, Rc_ang, n_Ang_r, n_Ang_a, mask2, \
+                           n_atoms, n_species, nnmax, x):
+    r = x[0]
+    vecs = x[1]
+    mask1 = x[2]
+    nn_inds = x[3]
+    n = x[4]
+    # the correction to make second derivative continuous
+    eps = 1e-3
+    # Small value for normalization
+    sm = 1e-20
+    r_ij = tf.reshape(r,[n_species,1,nnmax,1,1,1])
+    r_ik = tf.reshape(r,[1,n_species,1,nnmax,1,1])
+    invr = 1.0 / (r + sm)
+    invr_ij = tf.reshape(invr,[n_species,1,nnmax,1,1,1])
+    invr_ik = tf.reshape(invr,[1,n_species,1,nnmax,1,1])
+    rij_vec = tf.reshape(vecs,[n_species,1,nnmax,1,1,1,3])
+    rik_vec = tf.reshape(vecs,[1,n_species,1,nnmax,1,1,3])
+    costheta_jik = tf.reduce_sum(rij_vec*rik_vec, axis=6) / (r_ij*r_ik + sm)
+    mask = tf.reshape(mask1,[n_species,1,nnmax,1,1,1]) *\
+           tf.reshape(mask1,[1,n_species,1,nnmax,1,1]) *\
+           mask2
+    # radial center of gaussian
+    r_cent = (r_ij + r_ik) * 0.5 - R_p
+    ct = costheta_jik  # cos_theta_jik
+    st = tf.sqrt(1 - ct**2 + eps * ss**2)  # sin_theta_jik_approx
+    # normalization of eps correction
+    norm = 1.0 / (1. + tf.sqrt(1. + eps * ss**2))
+    # components of G = Gauss x CosTerm x CutTerms
+    Gauss = 2.0 * tf.exp(-eta_ang * r_cent**2)
+    onepcos = 1.0 + ct * cs + st * ss
+    CosTerm = (onepcos * norm)**zeta
+    Cut = tf_cutoffA_1a(r, Rc_ang)
+    Cut1 = tf.reshape(Cut,[n_species,1,nnmax,1,1,1])
+    Cut2 = tf.reshape(Cut,[1,n_species,1,nnmax,1,1])
+    dCut = tf_dcutoffA_1a(r, Rc_ang)
+    dCut1 = tf.reshape(dCut,[n_species,1,nnmax,1,1,1])
+    dCut2 = tf.reshape(dCut,[1,n_species,1,nnmax,1,1])
+    G = mask * Gauss * CosTerm
+    Cut1xCut2 = Cut1 * Cut2
+    # derivatives
+    # dGi/drj = A r_ij + B r_ik
+    dcos = zeta * Cut1xCut2 / onepcos * (cs - ss * ct / st)
+    etarcut = eta_ang * r_cent * Cut1xCut2
+    # A
+    dG1 = - G * invr_ij * \
+        (etarcut
+         + dcos * ct * invr_ij
+         + dCut1 * Cut2)
+    # B
+    dG2 = (G * dcos) * invr_ij * invr_ik
+    # A'
+    dG3 = - G * invr_ik *\
+        (etarcut
+         + dcos * ct * invr_ik
+         + dCut2 * Cut1)
+    # Fixing the G values
+    G *= Cut1xCut2
+    G = tf.reshape(tf.reduce_sum(G,[2,3]),[n_species,n_species,-1])
+    Gang = tf.concat([(2.0 - int(s1==s2)) * 0.5 * G[s1,s2] \
+                       for s1 in range(n_species) \
+                         for s2 in range(s1,n_species)],axis=0)
+    jterm = tf.expand_dims(dG1,-1)*rij_vec + \
+            tf.expand_dims(dG2,-1)*rik_vec
+    kterm = tf.expand_dims(dG2,-1)*rij_vec + \
+            tf.expand_dims(dG3,-1)*rik_vec
+    # Summing all terms for derivative w.r.t. i
+    dGang = tf.concat([(-2.0 + int(s1==s2)) * 0.5 * \
+                        tf.reduce_sum(jterm[s1,s2]+kterm[s1,s2], axis=[0,1]) \
+                          for s1 in range(n_species) \
+                            for s2 in range(s1,n_species)],axis=0)
+    # Putting only at the index of the atom
+    dGang = tf.reshape(dGang,[-1,1,3])*tf.reshape(tf.one_hot(n,n_atoms),[1,n_atoms,1])
+    # Adding all the derivatives wrt j and k
+    # For each nn we scatter to the atom in the right position full list
+    # Then we reshuffle this to be the right contribution in the dG matrix
+    ind1 = tf.tile(tf.reshape(tf.range(n_species),[-1,1,1]),[1,n_species,nnmax])
+    ind2 = tf.tile(tf.reshape(tf.range(n_species),[1,-1,1]),[n_species,1,nnmax])
+    ind3 = tf.tile(tf.reshape(nn_inds,[n_species,1,nnmax]),[1,n_species,1])
+    inds = tf.stack([ind1,ind2,ind3],axis=-1)
+    dGangjke = tf.zeros([n_species,n_species,n_atoms,n_Ang_r,n_Ang_a,3])
+    dGangjke = tf.tensor_scatter_nd_add(dGangjke,inds,tf.reduce_sum(jterm,axis=3))
+    # k part (is there a way to do more together?)
+    ind3 = tf.tile(tf.reshape(nn_inds,[1,n_species,nnmax]),[n_species,1,1])
+    inds = tf.stack([ind1,ind2,ind3],axis=-1)
+    dGangjke = tf.tensor_scatter_nd_add(dGangjke,inds,tf.reduce_sum(kterm,axis=2))
+    dGangjk = tf.concat([(2.0 - int(s1==s2)) * 0.5 * dGangjke[s1,s2] \
+                        for s1 in range(n_species) \
+                            for s2 in range(s1,n_species)],axis=0)
+    dGangjk = tf.reshape(dGangjk,[-1,n_atoms,n_Ang_r*n_Ang_a,3])
+    dGangjk = tf.reshape(tf.transpose(dGangjk, perm=[0,2,1,3]),[-1,n_atoms,3])
+    dGang = dGang + dGangjk
+    # Gang = tf.zeros([n_Ang_r*n_Ang_a])
+    # dGang = tf.zeros([n_Ang_r*n_Ang_a,n_atoms,3])
+    return Gang, dGang

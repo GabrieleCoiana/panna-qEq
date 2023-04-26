@@ -1,0 +1,2 @@
+model_checkpoint_path: "epoch_6_step_600"
+all_model_checkpoint_paths: "epoch_6_step_600"

@@ -1,4 +1,3 @@
-from mendeleev import element
 """A collection of atomic properties to be used in the code when needed
 does not pretend to be complete, it will be updated base on needs
 """
@@ -25,7 +24,7 @@ def recover_property(species, prop):
     """ helper:
     return asked property for given species otherwise rise error
     """
-    return element(species).mass
+
     try:
         return _PERIODIC_TABLE[species][prop]
     except KeyError:

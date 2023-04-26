@@ -1,11 +1,12 @@
+"""Wrapper for the binary example format."""
+
 import os
 
 import numpy as np
 
 
 class Example(object):
-    """
-    Example class, a class to handle a binary PANNA example
+    """ Example class, a class to handle a binary PANNA example.
 
     Parameters
     ----------
@@ -23,6 +24,14 @@ class Example(object):
             a per atom quantity that can be learn (eg charge)
         atomic_species: list of strings,
                         with atomic species name
+        el_energy_kernel: (n_atoms, n_atoms), opt
+            electrostatics energy kernel
+        el_force_kernel: (n_atoms, n_atoms, 3), opt
+            electrostatics force kernel
+        atomic_charges: (n_atoms), opt
+            atomic charges
+        total_charge: (1), opt
+            system total charge
         name: arbitrary name
     """
     def __init__(self,
@@ -37,6 +46,10 @@ class Example(object):
                  forces=np.empty(0),
                  per_atom_quantity=np.empty(0),
                  atomic_species=None,
+                 el_energy_kernel=np.empty(0),
+                 el_force_kernel=np.empty(0),
+                 atomic_charges=np.empty(0),
+                 total_charge=0.0,
                  name=None):
 
         self._g_vectors = np.asarray(g_vectors)
@@ -54,6 +67,11 @@ class Example(object):
         self._per_atom_quantity = per_atom_quantity
 
         self._atomic_species = atomic_species
+        self._el_energy_kernel = np.asarray(el_energy_kernel)
+        self._el_force_kernel = np.asarray(el_force_kernel)
+        self._atomic_charges = np.asarray(atomic_charges)
+        self._total_charge = total_charge
+
         self._name = name or 'NA'
 
     @property
@@ -131,14 +149,28 @@ class Example(object):
 
     @property
     def name(self):
-        
         filename, _dummy_extension = os.path.splitext(self._name)
         return filename
-        #return self._name
 
+    @property
+    def el_energy_kernel(self):
+        if self._el_energy_kernel.size > 0:
+            return self._el_energy_kernel
+        raise ValueError("electrostatic energy kernel Not available")
+    @property
+    def el_force_kernel(self):
+        if self._el_force_kernel.size > 0:
+            return self._el_force_kernel
+        raise ValueError("electrostatic force kernel Not available")
+    @property
+    def total_charge(self):
+        return self._total_charge
+    @property
+    def atomic_charges(self):
+        return self._atomic_charges
 
 def load_example(file_name):
-    """ Load binary example
+    """Load binary example.
 
     Parameters
     ----------
@@ -148,7 +180,6 @@ def load_example(file_name):
     ------
       Example object for internal computation
     """
-
     key = os.path.split(file_name)[-1]
     with open(file_name, "rb") as binary_file:
         bin_version = int.from_bytes(binary_file.read(4),
@@ -157,19 +188,14 @@ def load_example(file_name):
         if bin_version != 0:
             raise NotImplementedError()
         # converting to int to avoid handling little/big endian
-        flags = int.from_bytes(binary_file.read(2),
-                               byteorder='little',
-                               signed=False)
+        flags = int.from_bytes(binary_file.read(2), byteorder='little', signed=False)
         derivative_flag = flags & 0b00000001
         force_flag = flags & 0b00000010
         per_atom_quantities_flag = flags & 0b00000100
         sparse_derivative_flag = flags & 0b00001000
-        n_atoms = int.from_bytes(binary_file.read(4),
-                                 byteorder='little',
-                                 signed=False)
-        g_size = int.from_bytes(binary_file.read(4),
-                                byteorder='little',
-                                signed=False)
+        el_flag = flags & 0b00010000 
+        n_atoms = int.from_bytes(binary_file.read(4), byteorder='little', signed=False)
+        g_size = int.from_bytes(binary_file.read(4), byteorder='little', signed=False)
         payload = binary_file.read()
 
     # assuming machine that created the binary file is little endian
@@ -191,13 +217,11 @@ def load_example(file_name):
 
     if derivative_flag:
         if data.size == prev_bytes:
-            raise ValueError('Derivatives requested but not '
-                             'present in the file')
+            raise ValueError('Derivatives requested but not ' 'present in the file')
         if not sparse_derivative_flag:
             dgvec_tensor_bytes = n_atoms**2 * g_size * 3
             dgvect_tensor = data[prev_bytes:prev_bytes + dgvec_tensor_bytes]
-            dgvect_tensor = np.reshape(dgvect_tensor, [n_atoms, g_size, \
-                                                       n_atoms*3])
+            dgvect_tensor = np.reshape(dgvect_tensor, [n_atoms, g_size, n_atoms * 3])
             prev_bytes += dgvec_tensor_bytes
             dgvect_tensor_values = np.empty(0)
             dgvect_tensor_indices1 = np.empty(0)
@@ -205,11 +229,9 @@ def load_example(file_name):
         else:
             dgvect_elements = int(data[prev_bytes])
             prev_bytes += 1
-            dgvect_tensor_values = data[prev_bytes:prev_bytes +
-                                        dgvect_elements]
+            dgvect_tensor_values = data[prev_bytes:prev_bytes + dgvect_elements]
             prev_bytes += dgvect_elements
-            dgvect_tensor_indices = data[prev_bytes:prev_bytes +
-                                         2 * dgvect_elements]
+            dgvect_tensor_indices = data[prev_bytes:prev_bytes + 2 * dgvect_elements]
             dgvect_tensor_indices = np.reshape(dgvect_tensor_indices,
                                                [dgvect_elements, 2])
             dgvect_tensor_indices1 = dgvect_tensor_indices[:, 0]
@@ -224,7 +246,7 @@ def load_example(file_name):
 
     if force_flag:
         if data.size == prev_bytes:
-            raise ValueError('Forces requested but not ' 'present in the file')
+            raise ValueError('Forces requested but not present in the file')
         forces_bytes = n_atoms * 3
         forces = data[prev_bytes:prev_bytes + forces_bytes]
         prev_bytes += forces_bytes
@@ -236,6 +258,34 @@ def load_example(file_name):
     else:
         per_atom_quantity = np.empty(0)
 
+    if el_flag:
+        el_energy_kernel_bytes = n_atoms * n_atoms
+        total_charge_bytes = 1
+        atomic_charges_bytes = n_atoms
+
+        el_energy_kernel = data[prev_bytes:prev_bytes + el_energy_kernel_bytes]
+        el_energy_kernel = np.reshape(el_energy_kernel,[n_atoms, n_atoms])
+        prev_bytes += el_energy_kernel_bytes
+
+        if  derivative_flag:
+            el_force_kernel_bytes = n_atoms * n_atoms * 3
+            el_force_kernel = data[prev_bytes:prev_bytes + el_force_kernel_bytes]
+            el_force_kernel = np.reshape(el_force_kernel, [n_atoms, n_atoms, 3])
+            prev_bytes += el_force_kernel_bytes
+        else:
+            el_force_kernel=np.empty(0)
+
+        atomic_charges = data[prev_bytes:prev_bytes+atomic_charges_bytes]
+        prev_bytes += atomic_charges_bytes
+
+        total_charge = data[prev_bytes:prev_bytes+total_charge_bytes]
+
+
+    else:
+        el_energy_kernel=np.empty(0)
+        el_force_kernel=np.empty(0)
+        total_charge = 0.0
+        atomic_charges = np.empty(0)
     return Example(name=key,
                    true_energy=energy,
                    species_vector=spec_tensor,
@@ -246,4 +296,8 @@ def load_example(file_name):
                    d_g_vector_indices1=dgvect_tensor_indices1,
                    d_g_vector_indices2=dgvect_tensor_indices2,
                    forces=forces,
-                   per_atom_quantity=per_atom_quantity)
+                   per_atom_quantity=per_atom_quantity,
+                   el_energy_kernel=el_energy_kernel,
+                   el_force_kernel=el_force_kernel,
+                   atomic_charges=atomic_charges,
+                   total_charge=total_charge)

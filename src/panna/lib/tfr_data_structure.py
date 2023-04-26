@@ -7,7 +7,10 @@
 ###########################################################################
 import os
 
+from panna.lib.example_bin import Example as PannaExample
 import tensorflow as tf
+
+from typing import List
 
 
 def _int64_feature(value):
@@ -15,15 +18,19 @@ def _int64_feature(value):
 
 
 def _bytes_feature(value):
-    return tf.train.Feature(bytes_list=tf.train.BytesList(value=value))
+    """Returns a bytes_list from a string / byte."""
+    if isinstance(value, type(tf.constant(0))):
+        # BytesList won't unpack a string from an EagerTensor.
+        value = value.numpy()
+    return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 
 def _floats_feature(value):
     return tf.train.Feature(float_list=tf.train.FloatList(value=value))
 
 
-def tfr_writer(filename, data, path='.'):
-    """ Tfrecord writer
+def tfr_writer(filename: str, data: List[tf.train.Example], path: str = '.') -> None:
+    """Tfrecord writer.
 
     Parameters
     ----------
@@ -38,11 +45,12 @@ def tfr_writer(filename, data, path='.'):
             record_writer.write(entry.SerializeToString())
 
 
-def example_tf_packer(example,
-                      forces=False,
-                      sparse_dgvect=False,
-                      per_atom_quantity=False):
-    """Create an example with only the g-vectors without padding
+def example_tf_packer(example: PannaExample,
+                      forces: bool = False,
+                      sparse_dgvect: bool = False,
+                      per_atom_quantity: bool = False, 
+                      long_range_el: bool = False) -> tf.train.Example:
+    """Create an example with only the g-vectors without padding.
 
     Parameters
     ----------
@@ -56,6 +64,9 @@ def example_tf_packer(example,
     per_atom_quantity: Boolean
         flag to store a per atom quantity
         default False
+    long_range_el: Boolean
+        flag to store the electrostatic kernels
+        default: False
 
     Returns
     -------
@@ -69,12 +80,17 @@ def example_tf_packer(example,
          + forces : (3 * number of atoms )
          --- if per atom quantity
          + per atom quantity (number_of_atom)
+         --- if long range electrostatics
+         + electrostatics kernels 
+           - energy kernel (number_of_atom*number_of_atom)
+           - force kernel (number_of_atom*number_of_atom*3)
+
     """
     feature = {
         'gvects': _floats_feature(example.gvects.flatten()),
         'species': _int64_feature(example.species_vector),
         'energy': _floats_feature([example.true_energy]),
-        'name': _bytes_feature([example.name.encode()])
+        'name': _bytes_feature(example.name.encode())
     }
 
     if forces:
@@ -83,8 +99,7 @@ def example_tf_packer(example,
         else:
             feature['dgvect_size'] = _int64_feature(
                 [len(example.dgvect_values.flatten())])
-            feature['dgvect_values'] = _floats_feature(
-                example.dgvect_values.flatten())
+            feature['dgvect_values'] = _floats_feature(example.dgvect_values.flatten())
             feature['dgvect_indices1'] = _floats_feature(
                 example.dgvect_indices1.flatten())
             feature['dgvect_indices2'] = _floats_feature(
@@ -92,7 +107,14 @@ def example_tf_packer(example,
         feature['forces'] = _floats_feature(example.forces.flatten())
 
     if per_atom_quantity:
-        feature['per_atom_quantity'] = _floats_feature(
-            example.per_atom_quantity)
+        feature['per_atom_quantity'] = _floats_feature(example.per_atom_quantity)
+    
+    if long_range_el:
+        feature['total_charge'] = _floats_feature(example.total_charge.flatten())
+        feature['atomic_charges'] = _floats_feature(example.atomic_charges.flatten())
+        feature['el_energy_kernel'] = _floats_feature(example.el_energy_kernel.flatten())
+        feature['el_force_kernel'] = _floats_feature(example.el_force_kernel.flatten())
 
-    return tf.train.Example(features=tf.train.Features(feature=feature))
+
+    example_proto = tf.train.Example(features=tf.train.Features(feature=feature))
+    return example_proto

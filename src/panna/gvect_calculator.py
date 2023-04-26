@@ -14,16 +14,11 @@ import sys
 
 import numpy as np
 
-if __package__ != 'panna':
-    import gvector
-    from lib import ExampleJsonWrapper
-    from lib.log import emit_splash_screen, init_logging
-    from lib.parser_callable import converters
-else:
-    from . import gvector
-    from .lib import ExampleJsonWrapper
-    from .lib.log import emit_splash_screen, init_logging
-    from .lib.parser_callable import converters
+from panna import gvector
+from panna.lib import ExampleJsonWrapper
+from panna.lib.log import emit_splash_screen, init_logging
+from panna.lib.parser_callable import converters
+from panna.gvector.LR_electrostatic_term import Ewald_summation
 
 np.set_printoptions(16)
 
@@ -79,6 +74,22 @@ def _symmetry_function(symmetry_function: configparser.ConfigParser,
                                      sparse_dgvect=sparse_dgvect,
                                      pbc_directions=pbc_directions)
 
+    elif g_type == 'SB':
+        gvect_func = gvector.GvectSB(compute_dgvect=compute_dgvect,
+                                     species=species,
+                                     sparse_dgvect=sparse_dgvect,
+                                     pbc_directions=pbc_directions)
+
+    elif g_type == 'B2':
+        gvect_func = gvector.GvectB2(compute_dgvect=compute_dgvect,
+                                     species=species,
+                                     sparse_dgvect=sparse_dgvect,
+                                     pbc_directions=pbc_directions)
+    elif g_type == 'WmBP':
+        gvect_func = gvector.GvectWmBP(compute_dgvect=compute_dgvect,
+                                       species=species,
+                                       sparse_dgvect=sparse_dgvect,
+                                       pbc_directions=pbc_directions)
     else:
         raise ValueError('Not recognized symmetry function type')
 
@@ -201,6 +212,18 @@ def compute(config, gvect_func, *, cli_folder_info=None):
     else:
         per_atom_energy = False
 
+    if 'LONG_RANGE' in config:
+        LR = config['LONG_RANGE']
+        acc_factor = LR.getfloat('acc_factor', 1e-6)
+        kmax = LR.getfloat('kmax', None)
+        #rs is the screening length
+        rs = LR.getfloat('r_screen', None)
+        long_range_el = LR.getboolean('long_range_el', False)
+        PBC = LR.getboolean('PBC', True)
+    else:
+        long_range_el = False
+        acc_factor = 1e-6
+
     # Gvectors will be calculated only for files that end with .example extension 
     all_example_keys = []
     for file in os.listdir(input_json_dir):
@@ -247,6 +270,11 @@ def compute(config, gvect_func, *, cli_folder_info=None):
                 'positions': example.angstrom_positions,
                 'E': example.ev_energy
             }
+            if long_range_el:
+                example_dict['total_charge'] = example.total_charge
+                example_dict['atomic_charges'] = example.atomic_charges
+                example_dict['species_sequence'] = example.species_str
+
             # load specific quantities
             if per_atom_energy:
                 example_dict['per_atom_quantity'] = example.per_atom_ev_energy
@@ -267,19 +295,36 @@ def compute(config, gvect_func, *, cli_folder_info=None):
         # COMPUTE gvect and other quantities
         logger.debug('compute gvectors')
         feed = []
+        if long_range_el:
+            feed_LR = []
         for example_dict in parallel_batch:
-            feed.append((example_dict['key'], example_dict['positions'],
-                         example_dict['species'], example_dict['lattice_vectors']))
-        # the actual computation is done here - time this:
+            feed.append(
+                (example_dict['key'], example_dict['positions'],
+                 example_dict['species'], example_dict['lattice_vectors']))
+            if long_range_el:
+                feed_LR.append(
+                    (example_dict['key'], example_dict['positions'],
+                     example_dict['lattice_vectors'], acc_factor,
+                     example_dict['species_sequence'], PBC,
+                     kmax, rs, gvect_func.compute_dgvect))
+        if long_range_el:
+            feed_LR = pool.starmap(Ewald_summation, feed_LR)
         feed = pool.starmap(gvect_func, feed)
 
         # reorganize the results
         for example_dict in parallel_batch:
-            for idx, element in enumerate(feed):
+            for element in feed:
                 if example_dict['key'] == element['key']:
                     example_dict.update(element)
                     logger.debug('assigned')
-                    
+            if long_range_el:
+                for element in feed_LR:
+                    if example_dict['key'] == element.electrostat_term()['key']:
+                        example_dict.update(element.electrostat_term())
+                        logger.debug('assigned')
+
+
+
         # SAVE computed result
         logger.debug('save gvectors')
         feed = []

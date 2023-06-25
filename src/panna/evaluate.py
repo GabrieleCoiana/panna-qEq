@@ -78,7 +78,7 @@ class Writers():
 
     def _open_charge_writer(self):
         file_name = os.path.join(self._output_folder,
-                                 f'{self._file_base_name}_chargess.dat')
+                                 f'{self._file_base_name}_charges.dat')
         stream = open(file_name, 'w')
         stream.write('#filename atom_id q_nn q_ref\n')
         return stream

@@ -109,7 +109,7 @@ class ForceEvaluate():
                                                 dg_dx_i2)
         if self._op_version == OpVersion.SPARSE:
             de_dg = tf.reshape(de_dg, [1, -1])
-            forces_pred = tf.reshape(tf.sparse.sparse_dense_matmul(de_dg, dg_dx),
+            forces_pred = -tf.reshape(tf.sparse.sparse_dense_matmul(de_dg, dg_dx),
                                      [-1])
         elif self._op_version == OpVersion.DENSE:
             print("Sparse to dense not implemented!")

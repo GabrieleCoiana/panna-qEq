@@ -74,7 +74,7 @@ def unpack_data(data,
                 el_force_kernel = data['el_force_kernel']
                 el_inputs = (el_energy_kernel, total_charge, el_force_kernel)
             else:
-                el_inputs = (el_energy_kernel, None)
+                el_inputs = (el_energy_kernel, total_charge, None)
 
         output = []
         if forces:
@@ -291,7 +291,7 @@ class PannaModel(tf.keras.Model):
             raise StopIteration
         self._index += 1
         return result
-
+        
     @tf.function
     def _compute_pa_energy(self, batch_of_species, 
                            batch_of_gvects, 
@@ -321,15 +321,24 @@ class PannaModel(tf.keras.Model):
             # get the appropriate gvectors
             species_gvects = tf.gather(array_gvects, atomic_index_partitions[species_idx])
 
+            e_empty_list = tf.zeros(0)
+            gvect_size = tf.size(species_gvects)
             if self._compute_forces:
-                s_atomic_energies, s_des_dgs = network(species_gvects) 
+
+                dg_empty_list = tf.zeros((0,self.g_size))
+                s_atomic_energies, s_des_dgs = tf.cond(gvect_size>0,
+                                                   lambda: network(species_gvects),
+                                                   lambda: (e_empty_list, dg_empty_list))
+
                 # s_des_dgs shape = (None, 1, g_size)
                 # None: n of atoms for the given species in the current batch
                 # reshape [-1, g_size] to kill the extra [1] dimension
                 s_des_dgs = tf.reshape(s_des_dgs, [-1, self.g_size])
                 des_dgs_partitions.append(s_des_dgs)
             else:
-                s_atomic_energies = network(species_gvects)
+                s_atomic_energies = tf.cond(gvect_size>0,
+                                                   lambda: network(species_gvects),
+                                                   lambda: e_empty_list)
 
             s_atomic_energies = tf.reshape(s_atomic_energies, [-1])
             atomic_energies_partitions.append(s_atomic_energies)

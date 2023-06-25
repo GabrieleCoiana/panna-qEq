@@ -11,7 +11,7 @@ from typing import Union
 from typing import Dict
 from dataclasses import asdict
 from abc import ABC
-
+import sys
 import numpy as np
 import tensorflow as tf
 import json
@@ -87,7 +87,7 @@ class PannaModel_with_electrostatics(PannaModel):
     @min_eigenvalue.setter
     def min_eigenvalue(self, value):
         self._min_eigenvalue = value
-
+    
     #Define a new function
     @tf.function
     def tf_compute_pa_energy(self, batch_of_species, 
@@ -122,22 +122,29 @@ class PannaModel_with_electrostatics(PannaModel):
             network = self[species_symbol]
             # get the appropriate gvectors
             species_gvects = tf.gather(array_gvects, atomic_index_partitions[species_idx])
-
+            
+            e_empty_list = [tf.zeros(0) for i in range(3)]
+            gvect_size = tf.size(species_gvects)
             if self._compute_forces:
-                s_atomic_energies, s_des_dgs = network(species_gvects) 
-                
-                # s_des_dgs shape = (None, 1, g_size)
+
+                dg_empty_list = [tf.zeros((0,self.g_size)) for i in range(3)]
+
+                s_atomic_energies, s_des_dgs = tf.cond(gvect_size>0,
+                                                   lambda: network(species_gvects),
+                                                   lambda: (e_empty_list, dg_empty_list))
+
+                # s_des_dgs shape = (3, None, 1, g_size)
                 # None: n of atoms for the given species in the current batch
-                # reshape [-1, g_size] to kill the extra [1] dimension
-                #des_dgs_partitions.append(s_des_dgs)
+                # reshape each to [-1, g_size] to kill the extra [1] dimension
+                
                 for k in range(SR_order+1):
                     s_des_dgs_k = tf.reshape(s_des_dgs[k], [-1, self.g_size])
                     atomic_energies_partitions[k].append(tf.reshape(s_atomic_energies[k], [-1]))
                     des_dgs_partitions[k].append(s_des_dgs_k)
-
-
             else:
-                s_atomic_energies = network(species_gvects)
+                s_atomic_energies = tf.cond(gvect_size>0,
+                                                   lambda: network(species_gvects),
+                                                   lambda: e_empty_list)
                 for k in range(SR_order+1):
                     atomic_energies_partitions[k].append(tf.reshape(s_atomic_energies[k], [-1]))
 
@@ -247,7 +254,6 @@ class PannaModel_with_electrostatics(PannaModel):
 
         species_hardness = IE - EA
         species_electronegativity = 0.5 * (IE + EA)
-
         species_hardness = tf.constant(species_hardness, dtype=tf.float32)
         species_electronegativity = tf.constant(species_electronegativity, dtype=tf.float32)
         shape_spec_idx = tf.shape(batch_of_species)
@@ -346,7 +352,6 @@ class PannaModel_with_electrostatics(PannaModel):
         E = _E[0]
         Ep = _E[1]
         Epp = _E[2]
-        
 
         atomic_charges = self.batch_charges(
                                            batch_size,

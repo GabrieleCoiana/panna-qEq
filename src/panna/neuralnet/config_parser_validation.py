@@ -71,7 +71,7 @@ def parse_validation_config(valid_config, train_config):
     """Validation parser call."""
     _ = valid_config['PARALLELIZATION']
     validation_options = valid_config['VALIDATION_OPTIONS']
-    compute_forces = validation_options.get('compute_forces', False)
+    compute_forces = validation_options.getboolean('compute_forces', False)
     io_info = valid_config['IO_INFORMATION']
 
     if valid_config.has_section('LONG_RANGE'):

@@ -395,7 +395,6 @@ class A2affNetwork(tf.keras.layers.Layer):
                 #     stack.append(out_tensor.numpy())
                 in_tensor = out_tensor
 
-            out_tensor += self.offset
 
             if self._order>=1:
                 #In this case, the out_tensors returns (order + 1) elements.
@@ -404,6 +403,8 @@ class A2affNetwork(tf.keras.layers.Layer):
                     dE_collection = [] 
                 for k in range(self._order+1):
                     Ek = out_tensor[:, k]
+                    if k==0:
+                        Ek += self.offset
                     if self._constrain_even_terms and self._order==2:
                         if k != 0 and k % 2 == 0:
                             #add a regularizer such that Ek is greater than -min_eigenvalue
@@ -411,15 +412,14 @@ class A2affNetwork(tf.keras.layers.Layer):
 
                     E_collection.append(Ek)
                     if self._compute_jacobian:
-                        #Ek shape: # of atoms of this species
-                        #inputs shape: # of atoms of this species, size of gvectors
                         dEk_dg = g.batch_jacobian(Ek[:,tf.newaxis], inputs)
                         dE_collection.append(dEk_dg)
                 if self._compute_jacobian:
                     return E_collection, dE_collection
-                return E_collection 
+                else:
+                    return E_collection 
 
+            out_tensor += self.offset
         if self._compute_jacobian and self._order==0:
             return out_tensor, g.batch_jacobian(out_tensor, inputs)
-    
         return out_tensor

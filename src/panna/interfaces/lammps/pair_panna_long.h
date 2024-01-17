@@ -49,14 +49,16 @@ public:
   // double compute_network(double*, double*, int, int);
  //void PCG(double**, double*, double*, double*, int, int, double);
   void PCG(double*, double*, double*, int, double);
-  int M_inv_dot_vect( double*, double*, double*, int );
-  int A_dot_vect( double**, double*, double*, int );
-  double dot( double *, double *, int );
-  double norm( double *, int );
+  int M_inv_dot_vect(double*, double*, double*, int);
+  int A_dot_vect( double**, double*, double*, int);
+  double dot( double *, double *, int);
+  double norm( double *, int);
   void compute_A_dot_v_realspace(double*, double*, double*);
+  void allocate_storage();
   //parameters for computing charges
+  //fictitious charges
   double *qs, *qt;
-  int long_range_flag;
+  double *b_s, *b_t;
   int no_pbc;
   double q_tot;
   struct parameters{

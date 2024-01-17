@@ -60,11 +60,12 @@ def unpack_data(data,
       - (batch_energies_ref, batch_forces_ref) if forces else (batch_energies_ref, None)
       - batch_of_names if names
     """
+
+    
     if input_format=='tfr':
         batch_of_species = data['species']
         batch_of_gvects = data['gvects']
         batch_energies_ref = data['energy']
-
         if long_range_el:
             el_energy_kernel = data['el_energy_kernel']
             charges = data['atomic_charges']
@@ -76,6 +77,7 @@ def unpack_data(data,
             else:
                 el_inputs = (el_energy_kernel, total_charge, None)
 
+        
         output = []
         if forces:
             batch_forces_ref = data['forces']
@@ -106,27 +108,56 @@ def unpack_data(data,
             batch_of_names = data['name']
             output.append(batch_of_names)
     else:
+        #this is available only for ase interface.
+        #TODO:
+        #implement on the fly training.
+
+        if long_range_el:
+            el_energy_kernel = data['el_energy_kernel']
+            charges = data['atomic_charges']
+            total_charge = data['total_charge']
+            el_ref = [charges]
+            if forces:
+                el_force_kernel = data['el_force_kernel']
+                el_inputs = [el_energy_kernel, total_charge, el_force_kernel]
+            else:
+                el_inputs = [el_energy_kernel, total_charge, None]
+
         sizes = tf.shape(data['species'])
-        input_stack = (data['nats'],data['species'],data['positions'],\
+        input_stack = [data['nats'],data['species'],data['positions'],\
                        data['nn_inds'],data['nn_num'],data['nn_vecs'],\
-                       data['nn_r'],data['mask1'],data['mask2'])
+                       data['nn_r'],data['mask1'],data['mask2']]
         if forces:
-            output_signature = (tf.TensorSpec(shape=[None, None], dtype=tf.float32),
-                                tf.TensorSpec(shape=[None], dtype=tf.float32))
+            output_signature = [tf.TensorSpec(shape=[None, None], dtype=tf.float32),
+                                tf.TensorSpec(shape=[None], dtype=tf.float32)]
             gs, dgs = tf.map_fn(preprocess.tf_g, input_stack, back_prop=False,
                                 fn_output_signature=output_signature)
-            output = [(data['species'],gs,dgs)]
-            output.append((data['energy'],tf.reshape(data['forces'],[sizes[0],-1])))
+
+            output = [[data['species'],gs,dgs]]
+            if long_range_el:
+                output.append(el_inputs)
+                output.append([data['energy'],tf.reshape(data['forces'],[sizes[0],-1])])
+                output.append(el_ref)
+            else:
+                output.append([data['energy'],tf.reshape(data['forces'],[sizes[0],-1])])
+
         else:
-            output_signature = (tf.TensorSpec(shape=[None, None], dtype=tf.float32))
+            output_signature = [tf.TensorSpec(shape=[None, None], dtype=tf.float32)]
             gs = tf.map_fn(preprocess.tf_g, input_stack, back_prop=False,
                             fn_output_signature=output_signature)
             output = [(data['species'],gs)]
-            output.append((data['energy'], None))
+            if long_range_el:
+                output.append(el_inputs)
+                output.append((data['energy'], None))
+                output.append(el_ref)
+            else:
+                output.append((data['energy'], None))
+
+
         if names:
             batch_of_names = data['name']
             output.append(batch_of_names)
-
+        
     return tuple(output)
 
 class PannaModel(tf.keras.Model):

@@ -319,8 +319,8 @@ def compute(config, gvect_func, *, cli_folder_info=None):
                     logger.debug('assigned')
             if long_range_el:
                 for element in feed_LR:
-                    if example_dict['key'] == element.electrostat_term()['key']:
-                        example_dict.update(element.electrostat_term())
+                    if example_dict['key'] == element['key']:
+                        example_dict.update(element)
                         logger.debug('assigned')
 
 

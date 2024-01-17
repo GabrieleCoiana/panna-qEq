@@ -3,7 +3,8 @@
 
 ### For the general structure (PANNA 1.0) see publication at: [Comp Phys Comm, 256, 107402 (2020)](https://www.sciencedirect.com/science/article/abs/pii/S0010465520301843)
 ### or the pre-review version at: [arXiv:1907.03055](https://arxiv.org/abs/1907.03055)
-### New paper (PANNA 2.0) upcoming!
+### For the latest version (PANNA 2.0) see publication in: [J. Chem. Phys. 159, 084117 (2023)](https://pubs.aip.org/aip/jcp/article/159/8/084117/2908459/PANNA-2-0-Efficient-neural-network-interatomic)
+### or the pre-review version at: [arXiv:2305.11805](https://arxiv.org/abs/2305.11805)
 
 PANNA is a package to train and validate all-to-all connected network models for BP[1] and modified-BP[2] type local atomic environment descriptors and atomic potentials.
 

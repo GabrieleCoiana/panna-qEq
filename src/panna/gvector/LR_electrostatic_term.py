@@ -12,91 +12,77 @@ import scipy.constants as constants
 e_charge = 1.60217662e-19 
 epsilon_0 = 8.85418782e-12 #F/m unit
 
-class Ewald_summation:
+def Ewald_summation(key,
+             coords, 
+             lattice_vectors, 
+             acc_factor, 
+             species_sequence,
+             PBC=None,
+             kmax=None, 
+             rs=None,
+             compute_forces=False):
+    '''
+    filename:              example json
+    acc_factor (float):    accuracy of the ewald methods required
+    species_sequence:       sequence of species from json
+    kmax(float):            cutoff for the k-space sum. Default to none and will be 
+                            estimated according to references: Mol. Simul., 1:207–224, 1988. 
+                            and Frankel, Understanding Molecular Simulation:
+    compute_forces (bool): set to True if forces are required and False otherwise
+    set gaussian width to covalent radius from mendeleev
+    '''
+    covalent_radii = [element(x).covalent_radius for x in species_sequence]
+    #convert to gaussian width and to angstrom unit 
+    #multiply by  rt(2) because the gaussian is defined with
+    gaussian_width = np.asarray(covalent_radii) * 0.01 * np.sqrt(2.0)
+    #structure properties
+    lattice_length = np.linalg.norm(lattice_vectors,axis=1)
+    _rs = rs if rs else 0.0
+    _PBC = PBC if PBC else False
 
-    def __init__(self, 
-                 key,
-                 coords, 
-                 lattice_vectors, 
-                 acc_factor, 
-                 species_sequence,
-                 PBC=None,
-                 kmax=None, 
-                 rs=None,
-                 compute_forces=False):
-        '''
-        filename:              example json
-        acc_factor (float):    accuracy of the ewald methods required
-        species_sequence:       sequence of species from json
-        kmax(float):            cutoff for the k-space sum. Default to none and will be 
-                                estimated according to references: Mol. Simul., 1:207–224, 1988. 
-                                and Frankel, Understanding Molecular Simulation:
-        compute_forces (bool): set to True if forces are required and False otherwise
-        set gaussian width to covalent radius from mendeleev
-        '''
-        covalent_radii = [element(x).covalent_radius for x in species_sequence]
-        #convert to gaussian width and to angstrom unit 
-        #multiply by  rt(2) because the gaussian is defined with
-        gaussian_width = np.asarray(covalent_radii) * 0.01 * np.sqrt(2.0)
-        #structure properties
-        self._key = key
-        lattice_length = np.linalg.norm(lattice_vectors,axis=1)
-        self._rs = rs if rs else 0.0
+    if _PBC:
+        struct_prop = compute_structure_props(lattice_vectors)
+        volume, recip_lattice_vectors = struct_prop
 
+        gamma_max = 1/(np.sqrt(2.0)*np.min(gaussian_width))
+        _kmax = kmax if kmax else 2.* gamma_max * np.sqrt(-np.log(acc_factor))
 
-        self._PBC = PBC if PBC else False
+    output = {'key':key}
+    if not _PBC: 
 
-        self._gaussian_width = gaussian_width
-        self._coords = coords
-        self._lattice_vectors = lattice_vectors
-        if self._PBC:
-            self._struct_prop = compute_structure_props(self._lattice_vectors)
-            self._volume = self._struct_prop[0]
-            self._recip_lattice_vectors = self._struct_prop[1]
-
-            self._gamma_max = 1/(np.sqrt(2.0)*np.min(self._gaussian_width))
-            self._acc_factor = acc_factor
-            self._kmax = kmax if kmax else 2.* self._gamma_max * np.sqrt(-np.log(self._acc_factor))
-        self._compute_forces = compute_forces
-
-    def electrostat_term(self):        
-        '''compute total electrostatic energy'''
-        output = {'key':self._key}
-        if not self._PBC: 
-
-            LR_terms = real_space_term(self._gaussian_width, 
-                                      self._coords, 
-                                      self._compute_forces)
-            E_sc = np.zeros(2)
-            if self._rs > 0:
-                E_sc = screening_energy_term(self._lattice_vectors,
-                      LR_terms[2], LR_terms[3], self._PBC, 
-                      self._rs,
-                      compute_forces=self._compute_forces)
-
-            output['el_energy_kernel'] = LR_terms[0] + E_sc[0]
-            if self._compute_forces:
-                output['el_force_kernel'] = LR_terms[1] + E_sc[1]
-            return output
-
-        LR_terms = recip_space_term(self._kmax,
-                                    self._gaussian_width,
-                                    self._volume, 
-                                    self._coords, 
-                                    self._recip_lattice_vectors, 
-                                    self._acc_factor,
-                                    self._compute_forces)
+        LR_terms = real_space_term(gaussian_width, 
+                                  coords, 
+                                  compute_forces)
         E_sc = np.zeros(2)
-        if self._rs > 0:
-            E_sc = screening_energy_term(self._lattice_vectors,
-                      LR_terms[2], LR_terms[3], self._PBC, 
-                      self._rs,
-                      compute_forces=self._compute_forces)
+        if _rs > 0:
+            E_sc = screening_energy_term(lattice_vectors,
+                  LR_terms[2], LR_terms[3], _PBC, 
+                  _rs,
+                  compute_forces=compute_forces)
 
         output['el_energy_kernel'] = LR_terms[0] + E_sc[0]
-        if self._compute_forces:
+        if compute_forces:
             output['el_force_kernel'] = LR_terms[1] + E_sc[1]
         return output
+
+    LR_terms = recip_space_term(_kmax,
+                                gaussian_width,
+                                volume, 
+                                coords, 
+                                recip_lattice_vectors, 
+                                acc_factor,
+                                compute_forces)
+    E_sc = np.zeros(2)
+    if _rs > 0:
+        E_sc = screening_energy_term(lattice_vectors,
+                  LR_terms[2], LR_terms[3], _PBC, 
+                  _rs,
+                  compute_forces=compute_forces)
+
+    output['el_energy_kernel'] = LR_terms[0] + E_sc[0]
+    if compute_forces:
+        output['el_force_kernel'] = LR_terms[1] + E_sc[1]
+    return output
 
 def compute_structure_props(lattice_vectors):
     '''Calculuate the volume, reciprocal lattice vectors
@@ -320,7 +306,8 @@ def recip_space_term(kmax,
 
     # [i, j, 3] @ [n_k, 3].T = [i, j, n_k]
     tmp = gauss_term.copy()
-    tmp *= 2. * np.cos((rij @ ks_in_ball.T))
+    _arg = rij @ ks_in_ball.T
+    tmp *= 2. * np.cos(_arg)
 
     # [i, j, n_k]
     # contract n_k
@@ -330,9 +317,10 @@ def recip_space_term(kmax,
 
     if compute_forces:
         
-        force_tmp = 2. * np.sin((rij @ ks_in_ball.T)) * gauss_term
-        forces = force_tmp[:,:,np.newaxis,:] * ks_in_ball.T[np.newaxis,np.newaxis,:,:]
-        forces = np.sum(forces, axis=-1)
+        force_tmp = 2. * np.sin(_arg) * gauss_term
+        #forces = force_tmp[:,:,np.newaxis,:] * ks_in_ball.T[np.newaxis,np.newaxis,:,:]
+        forces = np.matmul(force_tmp, ks_in_ball)
+        #forces = np.sum(forces, axis=-1)
         del(force_tmp)
         del(gauss_term)
 

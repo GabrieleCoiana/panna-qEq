@@ -581,6 +581,7 @@ void EwaldPANNA::compute(int eflag, int vflag)
   // total structure factor by summing over procs
   double *q = atom->q;
   int *type = atom->type;
+  double **f = atom->f;
   int nlocal = atom->nlocal;
   double preu = 4.0*MY_PI/volume;
   double gauss_term, alpha2, sqk;
@@ -599,7 +600,6 @@ void EwaldPANNA::compute(int eflag, int vflag)
   // double loop over K-vectors and local atoms
   // perform per-atom calculations if needed
 
-  double **f = atom->f;
 
   int kx,ky,kz;
   double cypz,sypz,exprl,expim,partial,partial_peratom;

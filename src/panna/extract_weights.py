@@ -101,6 +101,10 @@ def _main(conf_file):
                 ASEconfig[c] = parameters[c]
         ASEconfig['SYMMETRY_FUNCTION'] = gvect_config['SYMMETRY_FUNCTION']
         ASEconfig['GVECT_PARAMETERS'] = gvect_config['GVECT_PARAMETERS']
+        try:
+            ASEconfig['LONG_RANGE'] = gvect_config['LONG_RANGE']
+        except:
+            pass
         with open(output_file, 'w') as f:
             ASEconfig.write(f)
         if not os.path.isdir(out_dir):

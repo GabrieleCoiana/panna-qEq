@@ -203,7 +203,7 @@ class ExampleJsonWrapper():
                 charges.append(atom[4])
             else:
                 charges.append(0.0)
-        return np.asarray(charges, dtype=np.float)
+        return np.asarray(charges, dtype=float)
 
     @property
     def ev_energy(self):

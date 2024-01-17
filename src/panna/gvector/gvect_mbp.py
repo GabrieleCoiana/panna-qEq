@@ -634,7 +634,7 @@ class GvectmBP(GvectBase):
             output['Gvect'] = np.asarray(Gs).tolist()
             return output
 
-    @tf.function(jit_compile=True,\
+    @tf.function(jit_compile=True,
         input_signature=[[tf.TensorSpec(shape=(), dtype=tf.int32),\
                          tf.TensorSpec(shape=(None), dtype=tf.int32),\
                          tf.TensorSpec(shape=(None,3), dtype=tf.float32),\
@@ -644,6 +644,7 @@ class GvectmBP(GvectBase):
                          tf.TensorSpec(shape=(None,None,None), dtype=tf.float32),\
                          tf.TensorSpec(shape=(None,None,None), dtype=tf.float32),\
                          tf.TensorSpec(shape=(None,None,None), dtype=tf.float32)]])
+
     def tf_g(self, x):
         """Operating on each element of the batch.
 
@@ -747,7 +748,7 @@ class GvectmBP(GvectBase):
                             tf.reshape(tf.eye(nnmax),[1,1,nnmax,nnmax])), \
                           [n_species,n_species,nnmax,nnmax,1,1])
         # Input for the mapped function:
-        input_stack = (nn_r,nn_vecs,maskang,nn_inds,tf.range(n_atoms))
+        input_stack = [nn_r,nn_vecs,maskang,nn_inds,tf.range(n_atoms)]
         if self.compute_dgvect:
             angf = tf_GdG_angular_mBP_1at
         else:
@@ -755,12 +756,12 @@ class GvectmBP(GvectBase):
         angf = partial(angf, Rs_ang, CTh, STh, eta_ang, zeta, \
                    Rc_ang, n_Ang_r, n_Ang_a, maskjk, n_atoms, n_species, nnmax)
         # Defining partial and signature for [without initial n_atoms]:
-        angf = tf.function(angf, input_signature=((
+        angf = tf.function(angf, input_signature=[[
                         tf.TensorSpec(shape=[None,None],dtype=tf.float32),\
                         tf.TensorSpec(shape=[None,None,3],dtype=tf.float32),\
                         tf.TensorSpec(shape=[None,None],dtype=tf.float32),\
                         tf.TensorSpec(shape=[None,None],dtype=tf.int32),\
-                        tf.TensorSpec(shape=[],dtype=tf.int32)),),\
+                        tf.TensorSpec(shape=[],dtype=tf.int32)]],\
                         jit_compile=True)
 
         # Both map_fn and vectorized_map work here:
@@ -786,7 +787,7 @@ class GvectmBP(GvectBase):
         #Temp in place of gs
         # padded_gs = tf.random.normal([nats_padded,gsize])
         # padded_dgs = tf.random.normal([nats_padded*gsize*nats_padded*3])
-        return padded_gs, padded_dgs
+        return [padded_gs, padded_dgs]
 
 @tf.function(jit_compile=True,
     input_signature=[tf.TensorSpec(shape=(None,None,None,1), dtype=tf.float32),\

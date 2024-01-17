@@ -68,10 +68,6 @@ PairPANNALong::PairPANNALong(LAMMPS *lmp) : Pair(lmp)
   writedata = 1;
   ewaldflag = 1;
   q_tot = 0.0;
-  long_range_flag = 0; // standard PANNA(Default)
-  //The rest are determined from the input
-  //long_range_flag=1; // standard Long range only
-  //long_range_flag=2; // standard PANNA + long range
   no_pbc = 1;
   single_enable = 0;
   // feenableexcept(FE_INVALID | FE_OVERFLOW);
@@ -88,9 +84,14 @@ PairPANNALong::PairPANNALong(LAMMPS *lmp) : Pair(lmp)
 
 PairPANNALong::~PairPANNALong()
 {
+
   if (allocated) {
     memory->destroy(setflag);
     memory->destroy(cutsq);
+    memory->destroy(qs);
+    memory->destroy(qt);
+    memory->destroy(b_s);
+    memory->destroy(b_t);
   }
 }
 
@@ -321,47 +322,54 @@ void PairPANNALong::compute_network(double *G,
 */
 double PairPANNALong::norm( double *v, int n )
 {
-  int  i;
-  double my_sum;
+  int  i, ii;
+  double my_sum, norm_sqr;
 
   my_sum = 0.0;
+  norm_sqr = 0.0;
   for( i = 0; i < n; i++ ) {
     my_sum += v[i]*v[i];
   }
-  return sqrt( my_sum );
+  MPI_Allreduce(&my_sum, &norm_sqr, 1, MPI_DOUBLE, MPI_SUM, world);
+  return sqrt( norm_sqr );
 }
 
+/* ---------------------------------------------------------------------- */
 double PairPANNALong::dot( double *u, double *v, int n )
 {
-  int  i;
-  double my_sum;
+  int  i, ii;
+  double my_dot, all_dot ;
 
-  my_sum = 0.0;
+  my_dot = 0.0;
+  all_dot = 0.0;
   for( i = 0; i < n; i++ ) {
-    my_sum += u[i]*v[i];
+    my_dot += u[i]*v[i];
   }
-  return my_sum;
+  MPI_Allreduce(&my_dot, &all_dot, 1, MPI_DOUBLE, MPI_SUM, world);
+  return all_dot;
 }
+/* ---------------------------------------------------------------------- */
 int PairPANNALong::A_dot_vect( double **A, double *x, double *my_vect, int n )
 {
   int  i,j;
-  double my_sum;
 
   for( i = 0; i < n; i++ ) {
     double tmp = 0;
+    double tmp_sum = 0;
     for (j = 0; j < n; j++){
       if (A[j][i]==0) A[j][i]=A[i][j];
       tmp += A[i][j]*x[j];
     }
-    my_vect[i] = tmp;
+    MPI_Allreduce(&tmp, &tmp_sum, 1, MPI_DOUBLE, MPI_SUM, world);
+    my_vect[i] = tmp_sum;
   }
   return 1;
 }
+/* ---------------------------------------------------------------------- */
 
 int PairPANNALong:: M_inv_dot_vect( double *M, double *x, double *my_vect, int n )
 {
   int  i,j;
-  double my_sum;
 
   for( i = 0; i < n; i++ ) {
     my_vect[i] = x[i]/M[i];
@@ -369,6 +377,7 @@ int PairPANNALong:: M_inv_dot_vect( double *M, double *x, double *my_vect, int n
   return 1;
 }
 
+/* ---------------------------------------------------------------------- */
 void PairPANNALong::PCG(double *xx, double *b, double *Fpp, int max_iter, double tol)
 {
   double *h, *g;
@@ -379,6 +388,8 @@ void PairPANNALong::PCG(double *xx, double *b, double *Fpp, int max_iter, double
   double h_A_h;
   double g_M_inv_g_new;
   int n = atom->nlocal;
+  int i, ii;
+
   h = new double[n];
   g = new double[n];
   v = new double[n];
@@ -395,24 +406,23 @@ void PairPANNALong::PCG(double *xx, double *b, double *Fpp, int max_iter, double
 
   // collect and distribute A_dot_h
   //
-  for (int i = 0; i<n;i++){
+  for (i = 0; i<n;i++){
     double Ah = Av[i] + Fpp[i] * xx[i];
     g[i] = (b[i] - Ah);
     M[i] = M[i] + Fpp[i];
-    //M[i] = 1.0;
   }
  //initial search direction
   M_inv_dot_vect(M, g, h, n);
- // the current M^-1 g
- for  (int i = 0; i<n;i++) v[i] = h[i];
+  // the current M^-1 g
+  for  (i = 0; i<n;i++){
+    v[i] = h[i];
+  }
+
   int k = 0;
-  double _tol_tmp = norm(g,n);
-  double tol_tmp;
-  MPI_Allreduce(&_tol_tmp,&tol_tmp,1,MPI_DOUBLE,MPI_SUM,world);
+  double tol_tmp = norm(g,n);
   while( tol_tmp>tol && k<max_iter){
    
-    double _g_M_inv_g = dot(g, v, n);
-    MPI_Allreduce(&_g_M_inv_g,&g_M_inv_g,1,MPI_DOUBLE,MPI_SUM,world);
+    double g_M_inv_g = dot(g, v, n);
 
     //compute A_dot_h
     if (no_pbc == 1){
@@ -421,47 +431,41 @@ void PairPANNALong::PCG(double *xx, double *b, double *Fpp, int max_iter, double
     else{
       force->kspace->compute_A_dot_v(h, M, Av); 
     }
-    for  (int i = 0; i<n;i++){
+    for (i = 0; i<n;i++){
       Av[i] = Av[i] + Fpp[i] * h[i];
       M[i] = M[i] + Fpp[i];
     }
     
-    double _h_A_h = dot(h, Av, n);
-    MPI_Allreduce(&_h_A_h,&h_A_h,1,MPI_DOUBLE,MPI_SUM,world);
+    double h_A_h = dot(h, Av, n);
     alpha = g_M_inv_g / h_A_h;
 
-    for  (int i = 0; i<n;i++) xx[i] = xx[i] + alpha * h[i];
-
-    for (int i = 0; i<n;i++){
-      double Ah = Av[i];
-      g[i] = g[i] - alpha * Ah;
+    for  (i = 0; i<n;i++) {
+      xx[i] = xx[i] + alpha * h[i];
+    }
+    for (i = 0; i<n;i++){
+      //double Ah = Av[i];
+      g[i] = g[i] - alpha * Av[i];
     }
     
     // beta is global and must be summed across processors
     // compute M^-1 g and store it in v; the new v
     // here, v = z = M^-1 g
-    if (no_pbc == 1){
-       M_inv_dot_vect( M, g, v, n );
-    }
-    else{
-       M_inv_dot_vect( M, g, v, n );
-    }
+    M_inv_dot_vect( M, g, v, n );
 
-    double _g_M_inv_g_new = dot(g, v, n);
-    MPI_Allreduce(&_g_M_inv_g_new,&g_M_inv_g_new,1,MPI_DOUBLE,MPI_SUM,world);
+    double g_M_inv_g_new = dot(g, v, n);
     beta = g_M_inv_g_new / g_M_inv_g;
 
-    for  (int i = 0; i<n;i++) h[i] = v[i] + beta * h[i];
-
-    double _tol_tmp = norm(g,n);
-    MPI_Allreduce(&_tol_tmp,&tol_tmp,1,MPI_DOUBLE,MPI_SUM,world);
+    for  (i = 0; i<n;i++){
+      h[i] = v[i] + beta * h[i];
+    }
+    tol_tmp = norm(g,n);
     k+=1;
   }
 
-  /*if (comm->me == 0) {
+ /*if (comm->me == 0) {
     if (screen) {
-      fprintf(screen,"  The linear system converged after %d steps\n",
-              k);
+      fprintf(screen,"  The linear system converged after %d steps to %f \n",
+              k, tol_tmp);
     }
   }*/
 
@@ -591,7 +595,7 @@ void PairPANNALong::compute(int eflag, int vflag)
   double dFppdG[nlocal][par.gsize];
 
   //computes local quantities E, Ep and Epp
-  for(int a=0; a<inum; a++){
+  for(int a=0; a<nlocal; a++){
     int myind = ilist[a];
     itype = type[myind];
     //standard panna
@@ -622,57 +626,53 @@ void PairPANNALong::compute(int eflag, int vflag)
     for(j = 0; j < par.gsize; j++) dFdG[myind][j] = dEdG[j];
     for(j = 0; j < par.gsize; j++) dFpdG[myind][j] = dEpdG[j];
     for(j = 0; j < par.gsize; j++) dFppdG[myind][j] = dEppdG[j];
+    
 
   }
 
   //compute charges
-  //double *q = atom->q;
-  double *b1, *b2;
   double tol=1e-6;
-  //double qtot = 0.0;
   int max_iter = 100; 
+  //b_s = new double [inum];
+  //b_t = new double [inum];
 
-  b1 = new double[nlocal];
-  b2 = new double[nlocal];
   for (i=0; i<nlocal; i++){
-    int iind = ilist[i];
-    b1[iind]=-Fp[iind];
-    b2[iind] = -1.0;
+    b_s[i]=-Fp[i];
+    b_t[i] = -1.0;
   }
   
-  qs = new double [nlocal];
-  qt = new double [nlocal];
+  //qs = new double [inum];
+  //qt = new double [inum];
 
   //initialize the the charges assuming the atomic environment dependent term 
   //is linear in the atomic charge
   for (i = 0; i<nlocal;i++){
-    int iind = ilist[i];
-    qs[iind] = q[iind];
-    qt[iind] = 0.0;
+    qs[i] = q[i];
+    qt[i] = 0.00;
+    
   }
 
   // solve linear system for s
-  PCG(qs, b1, Fpp, max_iter, tol);
+  PCG(qs, b_s, Fpp, max_iter, tol);
   // solve linear system for t  
-  PCG(qt, b2, Fpp, max_iter, tol);
+  PCG(qt, b_t, Fpp, max_iter, tol);
 
   double _s_sum=0.0;
   double _t_sum=0.0;
   for (i=0; i<nlocal; i++){
-    int iind = ilist[i];
-    _s_sum += qs[iind];
-    _t_sum += qt[iind];
+    _s_sum += qs[i];
+    _t_sum += qt[i];
   }
   double s_sum;
   double t_sum;
   MPI_Allreduce(&_s_sum, &s_sum,1, MPI_DOUBLE, MPI_SUM, world);
   MPI_Allreduce(&_t_sum, &t_sum,1, MPI_DOUBLE, MPI_SUM, world);
-
+  
   for (i=0; i<nlocal; i++){
-    int iind = ilist[i];
-    q[iind]=qs[iind]+(q_tot-s_sum)/t_sum*qt[iind];
+    q[i]=qs[i]+(q_tot-s_sum)/t_sum*qt[i];
   }
-  if (no_pbc!=1){ 
+
+  if (no_pbc != 1){ 
     if (force->kspace) force->kspace->qsum_qsq();
   }
  // start computation of energies and forces here
@@ -681,8 +681,10 @@ void PairPANNALong::compute(int eflag, int vflag)
   // Looping on local atoms
   for(ii=0; ii<inum; ii++){
     int myind = ilist[ii];
+    if (!(atom->mask[myind] & groupbit)) continue;
     itype = type[myind];
     double E=0.0;
+    
     if (no_pbc==1){
       qtmp = q[myind];
       xtmp = x[myind][0];
@@ -783,6 +785,7 @@ void PairPANNALong::compute(int eflag, int vflag)
     if (eflag_atom) eatom[myind] += E;
   }
 
+ 
   if (vflag_fdotr) {
     virial_fdotr_compute();
   }
@@ -1342,7 +1345,19 @@ void PairPANNALong::allocate()
   }
   memory->create(cutsq,n+1,n+1,"pair:cutsq");
 }
+/* ---------------------------------------------------------------------- */
 
+void PairPANNALong::allocate_storage()
+{
+  int nmax = atom->nmax;
+
+  memory->create(qs,nmax,"qeq:qs");
+  memory->create(qt,nmax,"qeq:qt");
+
+  memory->create(b_s,nmax,"qeq:b_s");
+  memory->create(b_t,nmax,"qeq:b_t");
+
+}
 // ########################################################
 // ########################################################
 
@@ -1355,6 +1370,7 @@ void PairPANNALong::coeff(int narg, char **arg)
 
   if (!allocated) {
     allocate();
+    allocate_storage();
   }
 
   // We now expect a directory and the parameters file name (inside the directory) with all params
@@ -1372,7 +1388,7 @@ void PairPANNALong::coeff(int narg, char **arg)
     exit(1);
   }
   q_tot = std::atof(arg[4]);
-  
+
   for (int i=1; i<=atom->ntypes; i++) {
     for (int j=1; j<=atom->ntypes; j++) {
       cutsq[i][j] = par.cutmax * par.cutmax;

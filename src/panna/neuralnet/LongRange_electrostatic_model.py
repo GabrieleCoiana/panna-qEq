@@ -222,6 +222,8 @@ class PannaModel_with_electrostatics(PannaModel):
         x1 = (Natoms, V, hessian)
         A_mat = self.tf_compute_A_matrix_from_V(x1)
         b_mat = -_chi - _des_dqs
+        Adiag = tf.linalg.diag_part(A_mat)
+        precond = tf.linalg.diag(Adiag)
 
         paddings = tf.constant([[0, 1]])
         
@@ -316,6 +318,7 @@ class PannaModel_with_electrostatics(PannaModel):
                 [Natoms+n_max_diff, 3])
      
     
+    @tf.function
     def tf_electrostatics(self, batch_n_atoms, batch_of_species, 
                           batch_of_gvects, V, total_charge,
                           electronegativity, atomic_hardness, V_prime=None): 
@@ -930,8 +933,10 @@ class PannaModel_with_electrostatics(PannaModel):
         species_hardness = IE - EA
         species_electronegativity = 0.5 * (IE + EA)
 
+        species_hardness = species_hardness.tolist()
+        species_electronegativity = species_electronegativity.tolist()
 
-        s += f'\n[Long_Range]\n'
+        s += f'\n[LONG_RANGE]\n'
         s += f'gaussian_width = {gaussian_width}\n'
         s += f'atomic_hardness = {species_hardness}\n'
         s += f'electronegativity = {species_electronegativity}\n'

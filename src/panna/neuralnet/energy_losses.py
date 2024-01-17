@@ -8,7 +8,6 @@ import tensorflow as tf
 from tensorflow.python.keras.losses import LossFunctionWrapper
 from tensorflow.python.keras.losses import Loss
 
-
 def quad(energies_true, energies_pred, **kwargs):
     r"""Quadratic difference per element of the batch.
 

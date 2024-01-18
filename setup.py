@@ -12,7 +12,7 @@ setup(
     long_description_content_type="text/markdown",
     package_dir={'': 'src'},
     packages=find_packages(where='src'),
-    install_requires=['numpy', 'tensorflow>=2', 'mendeleev'],
+    install_requires=['numpy', 'tensorflow>=2', 'mendeleev', 'scipy'],
     entry_points={
         'console_scripts': [
             'panna_train=panna.train:main', 'panna_evaluate=panna.evaluate:main',

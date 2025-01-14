@@ -11,7 +11,46 @@ import os
 from typing import Callable
 import tensorflow as tf
 
-from panna.neuralnet.parse_fn import load_json
+from functools import partial
+from panna.neuralnet.parse_fn import load_json, load_spice, load_npy, load_xyz
+
+# Function go from RaggedTensor batch to concatenated tensors padded to the nearest multiple
+def pad_batch(at_mod, pair_mod, nsp, batch_size, x):
+    ntot = tf.reduce_sum(x['nats'])
+    x['ntot'] = ntot
+    # Hack to build indices
+    x['inde'] = tf.map_fn(lambda x:x['n']*tf.ones(x['l'],dtype=tf.int32), {'l':x['nats'],'n':tf.range(batch_size)},
+                          fn_output_signature=tf.RaggedTensorSpec(shape=[None], dtype=tf.int32)).values
+    x['inda'] = tf.map_fn(lambda x:x['i']+x['s'], {'i':x['inda'],'s':tf.cast(x['species'].row_splits[:-1], tf.int32)},
+                          fn_output_signature=tf.RaggedTensorSpec(shape=[None], dtype=tf.int32)).values
+    x['indb'] = tf.map_fn(lambda x:x['i']+x['s'], {'i':x['indb'],'s':tf.cast(x['species'].row_splits[:-1], tf.int32)},
+                          fn_output_signature=tf.RaggedTensorSpec(shape=[None], dtype=tf.int32)).values
+    # Flattened versions of the ragged
+    for k in ['nn_vecs', 'nn_r', 'species', 'sp_a', 'sp_b', 'forces', 'targets']:
+        if k in x:
+            x[k] = x[k].values
+    ptot = tf.shape(x['inda'])[0]
+    # Padding
+    extra_at = (at_mod-(ntot%at_mod))%at_mod
+    # if extra_at>0:
+    x['species'] = tf.concat([x['species'], nsp*tf.ones(extra_at,dtype=tf.int32)], axis=0)
+    x['inde'] = tf.concat([x['inde'], batch_size*tf.ones(extra_at,dtype=tf.int32)], axis=0)
+    if 'forces' in x:
+        x['forces'] = tf.concat([x['forces'], tf.zeros((extra_at,3),dtype=tf.float32)], axis=0)
+    if 'targets' in x:
+        x['targets'] = tf.concat([x['targets'], tf.zeros(extra_at,dtype=tf.int32)], axis=0)
+    extra_pair = (pair_mod-(ptot%pair_mod))%pair_mod
+    x['mask'] = tf.ones(ptot, dtype=tf.int32)
+    # if extra_pair>0:
+    ones = tf.ones(extra_pair, dtype=tf.int32)
+    x['nn_r'] = tf.concat([x['nn_r'], tf.ones(extra_pair,dtype=tf.float32)], axis=0)
+    x['nn_vecs'] = tf.concat([x['nn_vecs'], tf.ones((extra_pair,3),dtype=tf.float32)], axis=0)
+    x['sp_a'] = tf.concat([x['sp_a'], nsp*ones], axis=0)
+    x['sp_b'] = tf.concat([x['sp_b'], nsp*ones], axis=0)
+    x['inda'] = tf.concat([x['inda'], ntot*ones], axis=0)
+    x['indb'] = tf.concat([x['indb'], ntot*ones], axis=0)
+    x['mask'] = tf.concat([x['mask'], tf.zeros(extra_pair,dtype=tf.int32)], axis=0)
+    return x
 
 def input_pipeline(data_dir: str,
                    batch_size: int,
@@ -67,45 +106,25 @@ def input_pipeline(data_dir: str,
 
         * a maximum number of epoch should also be added to this routine.
     """
+    # We distinguish between models that require a padded list of atoms with neighbours
+    # and those that require a list of pairs
     # Dictionaries needed for example parsing
-    if input_format=='example':
-        output_signature = {'nats': tf.TensorSpec(shape=(), dtype=tf.int32),
-            'species': tf.TensorSpec(shape=(None), dtype=tf.int32),
-            'positions': tf.TensorSpec(shape=(None,3), dtype=tf.float32),
-            'nn_inds': tf.TensorSpec(shape=(None,None,None), dtype=tf.int32),
-            'nn_num': tf.TensorSpec(shape=(None,None,2), dtype=tf.int32),
-            'nn_vecs': tf.TensorSpec(shape=(None,None,None,3), dtype=tf.float32),
-            'nn_r': tf.TensorSpec(shape=(None,None,None), dtype=tf.float32),
-            'mask1': tf.TensorSpec(shape=(None,None,None), dtype=tf.float32),
-            'mask2': tf.TensorSpec(shape=(None,None,None), dtype=tf.float32),
-            'energy': tf.TensorSpec(shape=(), dtype=tf.float32),
-            'name': tf.TensorSpec(shape=(), dtype=tf.string)}
-        padded_shapes = {'nats': [],
-            'species': [None],
-            'positions': [None, 3],
-            'nn_inds': [None, None, None],
-            'nn_num': [None, None, 2],
-            'nn_vecs': [None, None, None, 3],
-            'nn_r': [None, None, None],
-            'mask1': [None, None, None],
-            'mask2': [None, None, None],
-            'energy': [],
-            'name': []}
-        padding_values={'nats': 0,
-            'species': len(extra_data['species']),
-            'positions': 0.0,
-            'nn_inds': 0,
-            'nn_num': 0,
-            'nn_vecs': 0.0,
-            'nn_r': 0.0,
-            'mask1': 0.0,
-            'mask2': 0.0,
-            'energy': 0.0,
-            'name': None}
-        if parse_fn._forces:
-            output_signature['forces'] = tf.TensorSpec(shape=(None,3), dtype=tf.float32)
-            padded_shapes['forces'] = [None,3]
-            padding_values['forces'] = 0.0
+    if input_format in ['example', 'spice', 'npy', 'xyz']:
+        output_signature = {'nats': tf.TensorSpec(shape=[], dtype=tf.int32),
+            'inda': tf.TensorSpec(shape=[None], dtype=tf.int32),
+            'indb': tf.TensorSpec(shape=[None], dtype=tf.int32),
+            'nn_vecs': tf.TensorSpec(shape=[None,3], dtype=tf.float32),
+            'nn_r': tf.TensorSpec(shape=[None], dtype=tf.float32),
+            'species': tf.TensorSpec(shape=[None], dtype=tf.int32),
+            'sp_a': tf.TensorSpec(shape=[None], dtype=tf.int32),
+            'sp_b': tf.TensorSpec(shape=[None], dtype=tf.int32),
+            'energy': tf.TensorSpec(shape=[], dtype=tf.float32),
+            'name': tf.TensorSpec(shape=[], dtype=tf.string),
+            'forces': tf.TensorSpec(shape=[None,3], dtype=tf.float32)}
+        if input_format=='example':
+            output_signature['targets'] = tf.TensorSpec(shape=[None], dtype=tf.int32)
+            output_signature['conf_targets'] = tf.TensorSpec(shape=[], dtype=tf.int32)
+
 
     # https://www.tensorflow.org/api_docs/python/tf/data/Dataset
     # interleave section is very useful
@@ -117,10 +136,19 @@ def input_pipeline(data_dir: str,
             data = data.interleave(tf.data.TFRecordDataset,
                                    cycle_length=num_parallel_readers,
                                    deterministic=None)
-        elif input_format=='example':
-            data = tf.data.Dataset.from_generator(load_json, \
-                args=[data_dir,extra_data['mincut'],extra_data['maxcut'],
-                      extra_data['species'],parse_fn._forces], \
+        else:
+            if input_format=='example':
+                loader_func = load_json
+            elif input_format=='spice':
+                loader_func = load_spice
+            elif input_format=='npy':
+                loader_func = load_npy
+            elif input_format=='xyz':
+                loader_func = load_xyz
+            data = tf.data.Dataset.from_generator(loader_func, \
+                args=[data_dir,extra_data['Rcut'],
+                      extra_data['species'],parse_fn._forces,
+                      shuffle,], \
                 output_signature=output_signature)
 
         if cache:
@@ -155,11 +183,11 @@ def input_pipeline(data_dir: str,
             data = data.batch(batch_size=batch_size)
             # Unpack the data and perform the processing
             data = data.map(map_func=parse_fn, num_parallel_calls=num_parallel_calls)
-        elif input_format=='example':
-            # batching and padding the example dicts
-            data = data.padded_batch(batch_size=batch_size,
-                        padded_shapes=padded_shapes,
-                        padding_values=padding_values)
+        else:
+            # Ragged batch, then making a list and padding
+            data = data.ragged_batch(batch_size=batch_size, drop_remainder=not oneshot)
+            data = data.map(partial(pad_batch, extra_data['at_mod'], extra_data['pair_mod'], 
+                                    len(extra_data['species']), batch_size))
 
         # prefetch a number of batches
         data = data.prefetch(buffer_size=prefetch_buffer_size_multiplier)

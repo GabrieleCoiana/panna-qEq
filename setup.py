@@ -12,11 +12,11 @@ setup(
     long_description_content_type="text/markdown",
     package_dir={'': 'src'},
     packages=find_packages(where='src'),
-    install_requires=['numpy', 'mendeleev', 'scipy'],
-    extras_require={
-        "TF": ['tensorflow>=2'],
-        "JAX": ['tensorflow-cpu', 'jax[cuda12]', 'dm-haiku', 'optax'],
-    },
+    install_requires=['numpy', 'mendeleev', 'scipy', 'tensorflow>=2', 'jax[cuda12]', 'dm-haiku', 'optax'],
+    #extras_require={
+    #    "TF": ['tensorflow>=2'],
+    #    "JAX": ['tensorflow-cpu', 'jax[cuda12]', 'dm-haiku', 'optax'],
+    #},
     entry_points={
         'console_scripts': [
             'panna_train=panna.train:main', 'panna_evaluate=panna.evaluate:main',

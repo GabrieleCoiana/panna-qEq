@@ -1,0 +1,7 @@
+[console_scripts]
+panna_evaluate = panna.evaluate:main
+panna_extract_weights = panna.extract_weights:main
+panna_gvect_calculator = panna.gvect_calculator:main
+panna_jax = panna.train_jax:main
+panna_tfr_packer = panna.tfr_packer:main
+panna_train = panna.train:main

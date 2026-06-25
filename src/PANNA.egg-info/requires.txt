@@ -1,0 +1,7 @@
+numpy
+mendeleev
+scipy
+tensorflow>=2
+jax[cuda12]
+dm-haiku
+optax

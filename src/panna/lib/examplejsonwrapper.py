@@ -151,6 +151,14 @@ class ExampleJsonWrapper():
             except IndexError:
                 raise ValueError('forces were requested but are not available')
         return np.asarray(forces)
+    
+    @property
+    def stress(self):
+        """ recover the stress in ev/A^3
+        """
+        stress = np.asarray(self._example['stress']) * energy_to_ev(
+            self.unit_of_energy) / distances_to_angstrom(self.unit_of_length)**3
+        return stress
 
     @property
     def species_indexes(self):

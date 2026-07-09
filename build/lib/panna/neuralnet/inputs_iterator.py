@@ -25,6 +25,16 @@ def pad_batch(at_mod, pair_mod, nsp, batch_size, x):
                           fn_output_signature=tf.RaggedTensorSpec(shape=[None], dtype=tf.int32)).values
     x['indb'] = tf.map_fn(lambda x:x['i']+x['s'], {'i':x['indb'],'s':tf.cast(x['species'].row_splits[:-1], tf.int32)},
                           fn_output_signature=tf.RaggedTensorSpec(shape=[None], dtype=tf.int32)).values
+    # added by Gabri for stress
+    pair_lengths = x['inda'].row_splits[1:] - x['inda'].row_splits[:-1]
+    x['inds'] = tf.map_fn(
+        lambda z: z['n'] * tf.ones(z['l'], dtype=tf.int32),
+        {
+            'l': tf.cast(pair_lengths, tf.int32),
+            'n': tf.range(batch_size, dtype=tf.int32)
+        },
+        fn_output_signature=tf.RaggedTensorSpec(shape=[None], dtype=tf.int32)
+    ).values
     # Flattened versions of the ragged
     for k in ['nn_vecs', 'nn_r', 'species', 'sp_a', 'sp_b', 'forces', 'targets']:
         if k in x:
@@ -49,6 +59,7 @@ def pad_batch(at_mod, pair_mod, nsp, batch_size, x):
     x['sp_b'] = tf.concat([x['sp_b'], nsp*ones], axis=0)
     x['inda'] = tf.concat([x['inda'], ntot*ones], axis=0)
     x['indb'] = tf.concat([x['indb'], ntot*ones], axis=0)
+    x['inds'] = tf.concat([x['inds'], ntot*ones], axis=0)
     x['mask'] = tf.concat([x['mask'], tf.zeros(extra_pair,dtype=tf.int32)], axis=0)
     return x
 
@@ -120,7 +131,9 @@ def input_pipeline(data_dir: str,
             'sp_b': tf.TensorSpec(shape=[None], dtype=tf.int32),
             'energy': tf.TensorSpec(shape=[], dtype=tf.float32),
             'name': tf.TensorSpec(shape=[], dtype=tf.string),
-            'forces': tf.TensorSpec(shape=[None,3], dtype=tf.float32)}
+            'forces': tf.TensorSpec(shape=[None,3], dtype=tf.float32),
+            'latvecs': tf.TensorSpec(shape=[None,3,3], dtype=tf.float32) # TODO: if stress?
+            }
         if input_format=='example':
             output_signature['targets'] = tf.TensorSpec(shape=[None], dtype=tf.int32)
             output_signature['conf_targets'] = tf.TensorSpec(shape=[], dtype=tf.int32)

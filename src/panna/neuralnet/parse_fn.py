@@ -183,12 +183,15 @@ def load_json(data_dir, Rcut, species_list, get_forces, shuffle):
                'energy': example.ev_energy,
                'name': all_examples[i][:-8],
                'forces': example.forces,
+               'stress': example.stress,
                'targets': [target]*nats,
                'conf_targets': target,
+               'latvecs': example.angstrom_lattice_vectors # TODO: if stress?
                }
 
 # Loading from .xyz file(s)
 def load_xyz(data_dir, Rcut, species_list, get_forces, shuffle):
+    # TODO: implement stress!
     all_examples = []
     all_names = []
     if type(data_dir)==np.ndarray:

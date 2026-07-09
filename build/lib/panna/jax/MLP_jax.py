@@ -179,6 +179,7 @@ class PANNA_MLP(hk.Module):
         self.layers = []
         self.offsets = jnp.array(parameters['offsets'])
         self.forces = parameters['forces']
+        self.stress = parameters['stress']
         # To handle species specific/common mlp weights
         sp_weights = parameters['mlp_sp_weights']
         if sp_weights:
@@ -258,4 +259,22 @@ class PANNA_MLP(hk.Module):
         F -= jax.lax.scatter_add(jnp.zeros((nats,3)),
                                  jnp.expand_dims(batch['indb'],-1),Fterms,
                                  dimnums,mode='drop')
+        if self.stress:
+            dimnums = jax.lax.ScatterDimensionNumbers(update_window_dims=(1,2),
+                                                      inserted_window_dims=(0,),
+                                                      scatter_dims_to_operand_dims=(0,))
+
+            virial_pairs = jnp.einsum("pa,pb->pab", batch["nn_vecs"], Fterms)
+            virial = jax.lax.scatter_add(
+                                    jnp.zeros((bsize,3,3)),
+                                    jnp.expand_dims(batch['inds'],-1),
+                                    virial_pairs,
+                                    dimnums,
+                                    mode='drop'
+                                    )
+            volumes = jnp.linalg.det(batch['latvecs'])[:,None,None] # (bsize,1,1)
+            stress = -virial / volumes
+
+            return [E, F, virial]
+
         return [E, F]

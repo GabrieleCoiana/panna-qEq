@@ -4,6 +4,9 @@ import jax.numpy as jnp
 def compute_loss(parameters, modapp, model_variables, model_fixed, batch):
     model_state = {**model_variables,**model_fixed}
     preds = modapp(model_state, batch)
+    bsize = jnp.shape(batch['nats'])[0]
+    
+    Floss, Sloss = 0, 0
     if parameters['num_targets']==1:
         Ecost = parameters['energy_cost']
         Fcost = parameters['forces_cost']
@@ -17,19 +20,32 @@ def compute_loss(parameters, modapp, model_variables, model_fixed, batch):
     if parameters['forces']:
         # Just using the mean per component
         Floss = jnp.sum(Fcost*(preds[1]-batch['forces'])**2)/(3*batch['ntot']).astype(jnp.float32)
+    if parameters['stress']:
+        # print('LOSS - Stress loss')
+        Sloss = 1/(9*bsize) * jnp.sum((preds[2] - batch['stress'])**2)
+    
     fom = {}
     if 'MAE' in parameters['metrics']:
         fom['MAEat'] = jnp.mean(jnp.abs(preds[0]-batch['energy'])/batch['nats'].astype(jnp.float32))
         if parameters['forces']:
             fom['FMAEcomp'] = jnp.sum(jnp.abs(preds[1]-batch['forces']))/\
                               jnp.sum((3*batch['nats']),dtype=jnp.float32)
+        if parameters['stress']:
+            fom['SMAEcomp'] = jnp.sum(jnp.abs(preds[2]-batch['stress']))/(9*bsize) 
     if 'RMSE' in parameters['metrics']:
         fom['RMSEat'] = jnp.sqrt(jnp.mean(((preds[0]-batch['energy'])/batch['nats'].astype(jnp.float32))**2))
         if parameters['forces']:
             fom['FRMSEcomp'] = jnp.sqrt(jnp.sum((preds[1]-batch['forces'])**2)/\
                               jnp.sum((3*batch['nats']),dtype=jnp.float32))
+        if parameters['stress_cost']>0.0:
+            fom['SRMSEcomp'] = jnp.sqrt(jnp.sum((preds[2]-batch['stress'])**2)/\
+                              (bsize*9))
+    
+
     if parameters['forces']:
         return Eloss + Floss, fom
+    if parameters['stress']:
+        return Eloss + Floss + Sloss, fom
     else:
         return Eloss, fom
 
@@ -40,10 +56,14 @@ def compute_diffsums(model_state, modapp, parameters, batch):
         fom['EAsumat'] = jnp.sum(jnp.abs(preds[0]-batch['energy'])/batch['nats'].astype(jnp.float32))
         if parameters['forces']:
             fom['FAsum'] = jnp.sum(jnp.abs(preds[1]-batch['forces']))
+        if parameters['stress']:
+            fom['Ssum'] = jnp.sum(jnp.abs(preds[2]-batch['stress']))
     if 'RMSE' in parameters['metrics']:
         fom['E2sumat'] = jnp.sum(((preds[0]-batch['energy'])/batch['nats'].astype(jnp.float32))**2)
         if parameters['forces']:
-            fom['F2sum'] = jnp.sum((preds[1]-batch['forces'])**2)            
+            fom['F2sum'] = jnp.sum((preds[1]-batch['forces'])**2)    
+        if parameters['stress']:
+            fom['S2sum'] = jnp.sum((preds[2]-batch['stress'])**2)  
     fom['Nasum'] = jnp.sum(batch['nats']).astype(jnp.float32)
     fom['bs'] = batch['nats'].shape[0]
     return fom

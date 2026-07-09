@@ -19,6 +19,7 @@ Requires-Dist: tensorflow>=2
 Requires-Dist: jax[cuda12]
 Requires-Dist: dm-haiku
 Requires-Dist: optax
+Requires-Dist: ase
 Dynamic: classifier
 Dynamic: description
 Dynamic: description-content-type

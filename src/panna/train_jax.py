@@ -181,8 +181,7 @@ def init_train(parameters, model, grad_loss, batch):
     
     return train_func, model_state, tx, opt_state, e, s
 
-
-def main():
+def main(shell=True, argstr=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("-c",
                         "--config",
@@ -190,7 +189,13 @@ def main():
                         default='',
                         help="config file",
                         required=True)
-    flags, _unparsed = parser.parse_known_args()
+    
+    # added by Gabri. Was: only if statement
+    if shell:
+        flags, _unparsed = parser.parse_known_args()
+    else:
+        flags, _unparsed = parser.parse_known_args([argstr])
+    
     emit_splash_screen(logger)
     # Parsing config file
     parameters = trainjax_parameter_parser(flags.config)
@@ -217,14 +222,7 @@ def main():
     adt = None
     mix = parameters['mix_factor']
     omix = 1-mix
-    if not os.path.exists(parameters['train_dir']):
-        os.mkdir(parameters['train_dir'])
-    if not os.path.exists(parameters['train_dir']+'/models'):
-        os.mkdir(parameters['train_dir']+'/models')
     met = metrics(parameters)
-    if not os.path.exists(parameters['train_dir']+'/metrics.dat'):
-        with open(parameters['train_dir']+'/metrics.dat', 'w') as f:
-            f.write(met.header())
     ff = open(parameters['train_dir']+'/metrics.dat', 'a')
     tt = time.time()
     pt = tt-2
@@ -315,6 +313,7 @@ def main():
 
     ff.close()
     print("Training done!")
+    return parameters, pre, batch, model_state
 
 if __name__ == '__main__':
     main()

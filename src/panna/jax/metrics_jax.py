@@ -10,6 +10,7 @@ class metrics():
         else:
             self.val = False
         self.forces = parameters['forces']
+        self.stress = parameters['stress']
         self.MAE = 'MAE' in parameters['metrics']
         self.RMSE = 'RMSE' in parameters['metrics']
 
@@ -21,10 +22,14 @@ class metrics():
             self.train_foms['MAE'] = [0.0, 'MAE/at', 'MAEat']
             if self.forces:
                 self.train_foms['FMAE'] = [0.0, 'MAEF', 'FMAEcomp']
+            if self.stress:
+                self.train_foms['SMAE'] = [0.0, 'MAES', 'SMAEcomp']
         if self.RMSE:
             self.train_foms['RMSE'] = [0.0, 'RMSE/at', 'RMSEat']
             if self.forces:
                 self.train_foms['FRMSE'] = [0.0, 'RMSEF', 'FRMSEcomp']
+            if self.stress:
+                self.train_foms['SRMSE'] = [0.0, 'RMSES', 'SRMSEcomp']
 
         # Dict with one entry for each fom in validation
         # since we need to average after, this has the form:
@@ -38,12 +43,18 @@ class metrics():
             if self.forces:
                 self.val_foms['FMAE'] = [0.0, 0.0, 'Val_MAEF', 'FAsum', 'Nasum',
                                          lambda x,y:x/(3*y)]
+            if self.stress:
+                self.val_foms['SMAE'] = [0.0, 0.0, 'Val_MAES', 'Ssum', 'bs',
+                                         lambda x,y:x/(9*y)]
         if self.RMSE:
             self.val_foms['RMSE'] = [0.0, 0.0, 'Val_RMSE/at', 'E2sumat', 'bs', 
                                     lambda x,y:np.sqrt(x/y)]
             if self.forces:
                 self.val_foms['FRMSE'] = [0.0, 0.0, 'Val_RMSEF', 'F2sum', 'Nasum',
                                           lambda x,y:np.sqrt(x/(3*y))]
+            if self.forces:
+                self.val_foms['SRMSE'] = [0.0, 0.0, 'Val_RMSES', 'S2sum', 'bs',
+                                          lambda x,y:np.sqrt(x/(9*y))]
 
 
     # The header for the metrics file

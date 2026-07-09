@@ -4,10 +4,13 @@ logger = logging.getLogger('panna')
 import pickle
 import numpy as np
 import jax.numpy as jnp
+import os, shutil
+from panna.jax.metrics_jax import metrics
+
 
 from panna.lib.parser_callable import converters
 
-def trainjax_parameter_parser(filename):
+def trainjax_parameter_parser(filename, train=True):
     config = configparser.ConfigParser(converters=converters)
     logger.info('reading {}'.format(filename))
     config.read(filename)
@@ -89,7 +92,9 @@ def trainjax_parameter_parser(filename):
     if pars['num_targets']==1:
         pars['energy_cost'] = training_params.getfloat('energy_cost', 1.0)
         pars['forces_cost'] = training_params.getfloat('forces_cost', 0.0)
+        pars['stress_cost'] = training_params.getfloat('stress_cost', 0.0)
         pars['forces'] = pars['forces_cost']>0.0
+        pars['stress'] = pars['stress_cost']>0.0
     else:
         pars['energy_cost'] = training_params.get_comma_list_floats('energy_cost', [1.0])
         if len(pars['energy_cost'])==1:
@@ -98,12 +103,16 @@ def trainjax_parameter_parser(filename):
             raise ValueError("Energy cost should have size 1 or num_targets.")
         pars['energy_cost'] = jnp.asarray(pars['energy_cost'])
         pars['forces_cost'] = training_params.get_comma_list_floats('forces_cost', [0.0])
+        pars['stress_cost'] = training_params.get_comma_list_floats('stress_cost', [0.0])
         if len(pars['forces_cost'])==1:
             pars['forces_cost'] = [pars['forces_cost'][0]]*pars['num_targets']
+            pars['stress_cost'] = [pars['stress_cost'][0]]*pars['num_targets']
         if len(pars['forces_cost'])!=pars['num_targets']:
             raise ValueError("Forces cost should have size 1 or num_targets.")
         pars['forces'] = any(c>0.0 for c in pars['forces_cost'])
+        pars['stress'] = any(c>0.0 for c in pars['stress_cost'])
         pars['forces_cost'] = jnp.asarray(pars['forces_cost'])
+        pars['stress_cost'] = jnp.asarray(pars['stress_cost'])
     pars['energy_loss'] = training_params.get('energy_loss', 'per_mol')
 
     pars['fixed_variables'] = []
@@ -118,5 +127,21 @@ def trainjax_parameter_parser(filename):
     else:
         pars['sp_embedding'] = None
 
-
+    if train:
+        create_traindir(filename, pars)
     return pars
+
+
+# added by Gabri 
+def create_traindir(inp_filename, parameters):
+    if not os.path.exists(parameters['train_dir']):
+        os.mkdir(parameters['train_dir'])
+    if not os.path.exists(parameters['train_dir']+'/models'):
+        os.mkdir(parameters['train_dir']+'/models')
+    met = metrics(parameters)
+    if not os.path.exists(parameters['train_dir']+'/metrics.dat'):
+        with open(parameters['train_dir']+'/metrics.dat', 'w') as f:
+            f.write(met.header())
+    # copy input file to traindir
+    shutil.copy(inp_filename, parameters['train_dir'])
+    

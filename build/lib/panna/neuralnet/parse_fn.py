@@ -185,6 +185,7 @@ def load_json(data_dir, Rcut, species_list, get_forces, shuffle):
                'forces': example.forces,
                'targets': [target]*nats,
                'conf_targets': target,
+               'latvecs': example.angstrom_lattice_vectors # TODO: if stress?
                }
 
 # Loading from .xyz file(s)

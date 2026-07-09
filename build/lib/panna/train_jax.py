@@ -217,14 +217,6 @@ def main():
     adt = None
     mix = parameters['mix_factor']
     omix = 1-mix
-    if not os.path.exists(parameters['train_dir']):
-        os.mkdir(parameters['train_dir'])
-    if not os.path.exists(parameters['train_dir']+'/models'):
-        os.mkdir(parameters['train_dir']+'/models')
-    met = metrics(parameters)
-    if not os.path.exists(parameters['train_dir']+'/metrics.dat'):
-        with open(parameters['train_dir']+'/metrics.dat', 'w') as f:
-            f.write(met.header())
     ff = open(parameters['train_dir']+'/metrics.dat', 'a')
     tt = time.time()
     pt = tt-2

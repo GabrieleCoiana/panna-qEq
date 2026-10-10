@@ -29,10 +29,10 @@ Trained qEq models can be used directly in simulations through **ASE** and **JAX
 ```python
 # TODO: replace with the actual import path and model files
 from ase.io import read
-from panna.<module> import <Calculator>
+from panna.interfaces.jax_ASE import PANNAJAXCalculator_new
 
 atoms = read("BaTiO3.xyz")
-atoms.calc = <Calculator>(model="path/to/model")
+atoms.calc = PANNAJAXCalculator_new(config="path/to/model")
 
 print(atoms.get_potential_energy())
 print(atoms.get_forces())

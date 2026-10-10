@@ -44,7 +44,6 @@ class GvectmBP(GvectBase):
       gvect func
       __call__ func
     """
-
     name = 'mBP'
     doi = '10.1016/j.cpc.2020.107402'
 
@@ -68,6 +67,8 @@ class GvectmBP(GvectBase):
 
         Rc_rad = gv_param.getfloat('Rc_rad')
         self.update_parameter('Rc_rad', Rc_rad)
+        
+        
 
         Rs0_rad = gv_param.getfloat('Rs0_rad', 0.0)
         RsN_rad = gv_param.getint('RsN_rad', None)
@@ -149,6 +150,7 @@ class GvectmBP(GvectBase):
         else:  # single eta_ang value
             eta_ang = np.tile(np.asarray(eta_ang), len(Rs_ang))
         self.update_parameter('eta_ang', eta_ang)
+        
 
         # we do not support this anymore
         # Rsst_ang = gv_par.getfloat('Rsst_ang', -1)
@@ -211,8 +213,9 @@ class GvectmBP(GvectBase):
             'ThetasN': len(self.Thetas),
         }
         return parameters
-
-    @requires_parameters
+    
+    # Gabriele removed the decorator!
+    # @requires_parameters
     def __call__(self, key, positions, species, lattice_vectors, **kwargs):
         """Calculate the gvector based on given parameters, using list
 
@@ -258,7 +261,6 @@ class GvectmBP(GvectBase):
 
         """
         output = {'key': key}
-
         # define shorter names:
         # and make sure arrays are arrays
         n_species = self.number_of_species
@@ -284,6 +286,7 @@ class GvectmBP(GvectBase):
         n_atoms = len(positions)
         Gs = [np.empty(0) for x in range(n_atoms)]
         dGs_dense = np.zeros((n_atoms, self.gsize, n_atoms, 3))
+        
 
         # wrap the atoms in the unit cell
         if (lattice_vectors != 0).any():

@@ -182,6 +182,7 @@ def parse_config(config):
     training_params = config['TRAINING_PARAMETERS']
     kernel_regularizer, bias_regularizer,\
         max_training, compile_params = _parse_training_params(training_params)
+
     if not config.has_section('LONG_RANGE'):
         long_range_el = False
     else:
@@ -312,7 +313,8 @@ class SetStepCallback(tf.keras.callbacks.Callback):
 class CustomProgbarCallback(tf.keras.callbacks.ProgbarLogger):
     def __init__(self, count_mode: str = "steps", stateful_metrics=None,
                        interval: float = 0.02):
-        super().__init__(count_mode, stateful_metrics)
+        super().__init__() # modified by Gabri. Had count_mode, stateful_metrics inside
+        self.stateful_metrics = stateful_metrics
         self.interval = interval
 
     def _maybe_init_progbar(self):
@@ -340,10 +342,10 @@ def _parse_io_callbacks(io_info):
     # AND THIS DOES NOT SAVE ONLY THE WEIGHTS but the model
     # and ALL ITS DEPENDENCIES.
     model_ckpt_callback = tf.keras.callbacks.ModelCheckpoint(
-        train_dir + '/_models/epoch_{epoch}_step_{tot_st}',
+        train_dir + '/_models/epoch_{epoch}_step_{tot_st}', # for tensorflow>=2.16.  # .weights.h5
         save_weights_only=True,
-        save_freq=save_checkpoint_steps,
-        options=None)
+        save_freq=save_checkpoint_steps,)
+        # options=None)
     # Note: hist_freq is in epochs, so we put 1 for now
     tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=train_dir,
                                                           histogram_freq=1,
@@ -526,17 +528,16 @@ def _parse_training_params(training_params):
             staircase=training_params.getboolean('staircase_decay_type', False))
 
     # creation of the loss quantities
-
     kernel_regularizations = L1L2(training_params.getfloat('wscale_l1', 0.0),
                                   training_params.getfloat('wscale_l2', 0.0))
     bias_regularizations = L1L2(training_params.getfloat('bscale_l1', 0.0),
                                 training_params.getfloat('bscale_l2', 0.0))
-
+    
     opt = Adam(learning_rate=training_schedule,
-               beta_1=training_params.getfloat('beta1', 0.9),
-               beta_2=training_params.getfloat('beta2', 0.999),
-               epsilon=training_params.getfloat('adam_eps', 1e-7),
-               amsgrad=False)
+                beta_1=training_params.getfloat('beta1', 0.9),
+                beta_2=training_params.getfloat('beta2', 0.999),
+                epsilon=training_params.getfloat('adam_eps', 1e-7),
+                amsgrad=False)
     if training_params.getfloat('clip_value', 0.0) != 0.0:
         # Probably this is just a regularizer that must be passed to the layers.
         raise NotImplementedError('TODO, not reimplemented in panna')

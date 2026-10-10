@@ -44,6 +44,7 @@ def _prepare_model(model_params, model_file, dummy_batch):
         panna_model = create_panna_model_with_electrostatics(model_params)
     else:
         panna_model = create_panna_model(model_params)
+
     _ = panna_model(dummy_batch)
     panna_model.load_weights(model_file.file_name)
     return panna_model
@@ -197,9 +198,10 @@ def run_eval(model_params, model_files, dataset, output_folder):
 
         with Writers(output_folder, model_file, force_flag, long_range_el) as f:
             f.write(out)
+    return model
 
 
-def main(*args, **kwargs):
+def main(shell=True, argstr=None, *args, **kwargs):
     parser = argparse.ArgumentParser()
     parser.add_argument('-c',
                         '--config',
@@ -210,13 +212,34 @@ def main(*args, **kwargs):
                         action='store_true',
                         help='debug flag, not working for now',
                         required=False)
-    args = parser.parse_args()
+    # added by Gabri. Was: only if statement
+    if shell:
+        args = parser.parse_args()
+    else:
+        args = parser.parse_args([argstr])
 
     emit_splash_screen(logger)
 
     valid_config = parameter_file_parser(args.config)
     train_config_file = valid_config['IO_INFORMATION'].get('train_ini', 'train.ini')
     train_config = parameter_file_parser(train_config_file)
+    
+    # added by Gabri
+    if 'LONG_RANGE' in valid_config:
+        LR = valid_config['LONG_RANGE']
+        acc_factor = LR.getfloat('acc_factor', 1e-6)
+        kmax = LR.getfloat('kmax', None)
+        #rs is the screening length
+        rs = LR.getfloat('r_screen', None)
+        long_range_el = LR.getboolean('long_range_el', False)
+        PBC = LR.getboolean('PBC', True)
+        
+        
+    # if long_range_el:
+    #     example_dict['total_charge'] = example.total_charge
+    #     example_dict['atomic_charges'] = example.atomic_charges
+    #     example_dict['species_sequence'] = example.species_str
+    # ######################################
 
     model_params, model_files, dataset = parse_validation_config(
         valid_config, train_config)
@@ -226,8 +249,10 @@ def main(*args, **kwargs):
         os.mkdir(output_folder)
 
     model_files = _filter_model_files(output_folder, model_files)
+    
 
-    run_eval(model_params, model_files, dataset, output_folder)
+    model = run_eval(model_params, model_files, dataset, output_folder)
+    return model, dataset
 
 
 if __name__ == '__main__':

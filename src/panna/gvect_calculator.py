@@ -19,6 +19,7 @@ from panna.lib import ExampleJsonWrapper
 from panna.lib.log import emit_splash_screen, init_logging
 from panna.lib.parser_callable import converters
 from panna.gvector.LR_electrostatic_term import Ewald_summation
+# from panna.gvector.LR_electrostatic_term_gabri_pointcharges import Electrostatics_brute_force
 
 np.set_printoptions(16)
 
@@ -127,7 +128,7 @@ def extract_gvect_func(config):
     else:
         pbc_directions = None
         logger.info('PBC will be determined by lattice parameters in the json file for each example')
-
+    
     gvect_func = _symmetry_function(config['SYMMETRY_FUNCTION'], pbc_directions)
 
     # Every gvect type may have different param set, needs its own parser to parse the config
@@ -220,6 +221,10 @@ def compute(config, gvect_func, *, cli_folder_info=None):
         rs = LR.getfloat('r_screen', None)
         long_range_el = LR.getboolean('long_range_el', False)
         PBC = LR.getboolean('PBC', True)
+        gaussian_std = LR.getfloat('gaussian_std', None) 
+        alpha = 1/(np.sqrt(2)*gaussian_std) if (gaussian_std is not None) else None
+        Rc = LR.getfloat('real_space_cutoff', None)
+        verbose = False
     else:
         long_range_el = False
         acc_factor = 1e-6
@@ -239,8 +244,9 @@ def compute(config, gvect_func, *, cli_folder_info=None):
     # parallelization related parameters
     number_of_process = config['PARALLELIZATION'].getint('number_of_process', 1)
     pool = mp.Pool(number_of_process)
+    
 
-    log_for_recover = open(os.path.join(log_dir, 'gvect_already_computed.dat'), 'a')
+    # log_for_recover = open(os.path.join(log_dir, 'gvect_already_computed.dat'), 'a')
 
     logger.info('--start--')
     while True:
@@ -285,6 +291,7 @@ def compute(config, gvect_func, *, cli_folder_info=None):
             logger.debug(example_dict)
             parallel_batch.append(example_dict)
             elements_in_buffer += 1
+            
 
         if not parallel_batch:
             # exit condition if the computation has ended
@@ -305,43 +312,44 @@ def compute(config, gvect_func, *, cli_folder_info=None):
                 feed_LR.append(
                     (example_dict['key'], example_dict['positions'],
                      example_dict['lattice_vectors'], acc_factor,
-                     example_dict['species_sequence'], PBC,
-                     kmax, rs, gvect_func.compute_dgvect))
+                     example_dict['species_sequence'], PBC)),
+                     #kmax, rs, gvect_func.compute_dgvect, alpha, Rc, verbose))
         if long_range_el:
-            feed_LR = pool.starmap(Ewald_summation, feed_LR)
+            # print('aaa',feed_LR[0])
+            # exit()
+            feed_LR = Ewald_summation(*feed_LR[0])#pool.starmap(Ewald_summation, feed_LR) #Electrostatics_brute_force   #
         feed = pool.starmap(gvect_func, feed)
+        
 
-        # reorganize the results
-        for example_dict in parallel_batch:
-            for element in feed:
-                if example_dict['key'] == element['key']:
-                    example_dict.update(element)
-                    logger.debug('assigned')
-            if long_range_el:
-                for element in feed_LR:
-                    if example_dict['key'] == element['key']:
-                        example_dict.update(element)
-                        logger.debug('assigned')
+    #     # reorganize the results
+    #     for example_dict in parallel_batch:
+    #         for element in feed:
+    #             if example_dict['key'] == element['key']:
+    #                 example_dict.update(element)
+    #                 logger.debug('assigned')
+    #         if long_range_el:
+    #             for element in feed_LR:
+    #                 if example_dict['key'] == element['key']:
+    #                     example_dict.update(element)
+    #                     logger.debug('assigned')
+        
+    #     # SAVE computed result
+    #     logger.debug('save gvectors')
+    #     feed = []
+    #     for example_dict in parallel_batch:
+    #         feed.append((example_dict, binary_out_dir))
+    #     pool.starmap(gvector.binary_encoder, feed)
+
+    # #     # final log for recovery
+    # #     log_for_recover.write(','.join(
+    # #         [example_dict['key'] for example_dict in parallel_batch]))
+    # #     log_for_recover.write(',')
+    # #     log_for_recover.flush()
+    # # log_for_recover.close()
+    return feed#feed_LR['el_energy_kernel']
 
 
-
-        # SAVE computed result
-        logger.debug('save gvectors')
-        feed = []
-        for example_dict in parallel_batch:
-            feed.append((example_dict, binary_out_dir))
-
-        pool.starmap(gvector.binary_encoder, feed)
-
-        # final log for recovery
-        log_for_recover.write(','.join(
-            [example_dict['key'] for example_dict in parallel_batch]))
-        log_for_recover.write(',')
-        log_for_recover.flush()
-    log_for_recover.close()
-
-
-def main():
+def main(shell=True, argstr=None):
     parser = argparse.ArgumentParser(description='Gvectors calculator')
 
     parser.add_argument('-c', '--config', type=str, help='config file', required=True)
@@ -354,8 +362,14 @@ def main():
                         action='store_true',
                         help='debug flag',
                         required=False)
-
-    args = parser.parse_args()
+    # added by Gabri. Was: only if statement
+    if shell:
+        args = parser.parse_args()
+    else:
+        args = parser.parse_args([argstr])
+        
+    # print('mygvect_sample.ini' , args.config)
+    
     init_logging()
     emit_splash_screen(logger)
 
@@ -370,9 +384,11 @@ def main():
     # extract which gvector type and therefore compute function to use
     # this function also sets all the config parameters needed for that gvect type
     gvect_func = extract_gvect_func(config)
-
+    
     # compute gvector
-    compute(config, gvect_func, cli_folder_info=args.folder_info)
+    feed = compute(config, gvect_func, cli_folder_info=args.folder_info)
+    return feed
+
 
 
 if __name__ == '__main__':

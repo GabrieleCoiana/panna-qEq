@@ -197,6 +197,7 @@ class A2affNetwork(tf.keras.layers.Layer):
     def build(self, input_shape):
         for i, output_size in enumerate(self._layers_size):
             _, activation = get_activation(self._layers_activation[i])
+
             if i>0:
                 input_size = self._layers_size[i-1]
             else:
@@ -232,6 +233,11 @@ class A2affNetwork(tf.keras.layers.Layer):
                     kernel_constraint=constraint,
                     trainable=self._layers_trainable[i],
                     name=f'layer_{i}')
+                # import sys
+                # print(input_shape)
+                # print(i, output_size)
+                # sys.exit()
+                # print(layer.build)
                 layer.build(input_shape)
             input_shape = output_size
             self._layers.append(layer)
@@ -384,17 +390,14 @@ class A2affNetwork(tf.keras.layers.Layer):
             cm = tf.GradientTape(persistent=True)
         else:
             cm = nullcontext()
-
         with cm as g:
             if g is not None:
                 g.watch(inputs)
-            
             for l_idx, layer in enumerate(self._layers):
                 out_tensor = layer(in_tensor)
                 # if self._activation_stack:
                 #     stack.append(out_tensor.numpy())
                 in_tensor = out_tensor
-
 
             if self._order>=1:
                 #In this case, the out_tensors returns (order + 1) elements.
@@ -418,7 +421,6 @@ class A2affNetwork(tf.keras.layers.Layer):
                     return E_collection, dE_collection
                 else:
                     return E_collection 
-
             out_tensor += self.offset
         if self._compute_jacobian and self._order==0:
             return out_tensor, g.batch_jacobian(out_tensor, inputs)

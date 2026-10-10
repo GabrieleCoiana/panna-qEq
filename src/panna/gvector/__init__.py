@@ -14,6 +14,7 @@ from panna.gvector.gvect_bp import GvectBP
 from panna.gvector.gvect_mbp import GvectmBP
 from panna.gvector.gvect_latte import GvectLATTE
 
+
 __all__ = [
     'binary_encoder', 'GvectmBP', 'GvectBP', 'GvectLATTE'
 ]

@@ -58,6 +58,7 @@ def _create_validation_dataset(io_info, validation_info, parse_fn):
         raise ValueError('Input format not supported')
     if not data_dir:
         raise ValueError('Missing data directory')
+
     dataset = input_pipeline(data_dir=data_dir,
                              batch_size=batch_size,
                              parse_fn=parse_fn,
@@ -81,7 +82,7 @@ def parse_validation_config(valid_config, train_config):
     else:
         long_range_el = False
         long_range_vdw = False
-
+        
 
     networks_dir = io_info.get('networks_dir')
     model_files = _filter_models_files(networks_dir, validation_options)

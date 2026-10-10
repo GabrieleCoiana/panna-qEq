@@ -20,7 +20,8 @@ def Ewald_summation(key,
              PBC=None,
              kmax=None, 
              rs=None,
-             compute_forces=False):
+             compute_forces=False,
+             covalent_radii=None):
     '''
     filename:              example json
     acc_factor (float):    accuracy of the ewald methods required
@@ -31,10 +32,18 @@ def Ewald_summation(key,
     compute_forces (bool): set to True if forces are required and False otherwise
     set gaussian width to covalent radius from mendeleev
     '''
-    covalent_radii = [element(x).covalent_radius for x in species_sequence]
-    #convert to gaussian width and to angstrom unit 
-    #multiply by  rt(2) because the gaussian is defined with
-    gaussian_width = np.asarray(covalent_radii) * 0.01 * np.sqrt(2.0)
+    if covalent_radii is None:
+        covalent_radii = [element(x).covalent_radius for x in species_sequence]
+        #convert to gaussian width and to angstrom unit 
+        #multiply by  rt(2) because the gaussian is defined with
+        gaussian_width = np.asarray(covalent_radii) * 0.01 * np.sqrt(2.0)
+    else:
+        _, mapping = np.unique(species_sequence, return_inverse=True)
+        # covalent_radii = covalent_radii#np.repeat([covalent_radii / ( 0.01 * np.sqrt(2.0))], len(species_sequence))
+        gaussian_width = np.asarray(covalent_radii)[mapping] * np.sqrt(2.0)
+        
+
+    print('PANNA gaussian width', gaussian_width[0])
     #structure properties
     lattice_length = np.linalg.norm(lattice_vectors,axis=1)
     _rs = rs if rs else 0.0
@@ -49,7 +58,7 @@ def Ewald_summation(key,
 
     output = {'key':key}
     if not _PBC: 
-
+        print('Panna NOT PBC real term!')
         LR_terms = real_space_term(gaussian_width, 
                                   coords, 
                                   compute_forces)
@@ -59,12 +68,12 @@ def Ewald_summation(key,
                   LR_terms[2], LR_terms[3], _PBC, 
                   _rs,
                   compute_forces=compute_forces)
-
+        
         output['el_energy_kernel'] = LR_terms[0] + E_sc[0]
         if compute_forces:
             output['el_force_kernel'] = LR_terms[1] + E_sc[1]
         return output
-
+    print('Panna PBC!')
     LR_terms = recip_space_term(_kmax,
                                 gaussian_width,
                                 volume, 
@@ -72,16 +81,18 @@ def Ewald_summation(key,
                                 recip_lattice_vectors, 
                                 acc_factor,
                                 compute_forces)
+    # print(LR_terms[0][0:4,0:4])
+
     E_sc = np.zeros(2)
     if _rs > 0:
         E_sc = screening_energy_term(lattice_vectors,
                   LR_terms[2], LR_terms[3], _PBC, 
                   _rs,
                   compute_forces=compute_forces)
-
-    output['el_energy_kernel'] = LR_terms[0] + E_sc[0]
+    output['el_energy_kernel'] = LR_terms[0]#LR_terms[0] + E_sc[0]
     if compute_forces:
         output['el_force_kernel'] = LR_terms[1] + E_sc[1]
+    output['gamma_all'] = LR_terms[3]
     return output
 
 def compute_structure_props(lattice_vectors):
@@ -195,7 +206,8 @@ def real_space_term(gaussian_width,
     else:
         rij = coords[:,np.newaxis] - coords
         gamma_all = 1.0/np.sqrt(gaussian_width[:,np.newaxis]**2 + np.asarray(gaussian_width)**2)
-
+    
+    print('gamma all', gamma_all[0,0], gaussian_width[0])
     #compute the norm of all distances
     rij_norm = np.linalg.norm(rij, axis=-1)
     #trick to set the i==j element of the matrix to zero
@@ -206,9 +218,9 @@ def real_space_term(gaussian_width,
     V = erf_term.copy()
 
     V *=CONV_FACT
-    E_diag = CONV_FACT * 2 / np.sqrt(np.pi) * 1/(np.sqrt(2.0)*gaussian_width)
-    diag_indexes = np.diag_indices(Natoms)
-    V[diag_indexes] = E_diag
+    # E_diag = CONV_FACT * 2 / np.sqrt(np.pi) * 1/(np.sqrt(2.0)*gaussian_width)
+    # diag_indexes = np.diag_indices(Natoms)
+    # V[diag_indexes] = E_diag
 
     if compute_forces:
         #rij_tmp = np.where(rij_norm>0, 1/rij_norm**2,0)
@@ -260,8 +272,11 @@ def recip_space_term(kmax,
     else:
         rij = coords[:,np.newaxis] - coords
         gamma_all = 1.0/np.sqrt(gaussian_width[:,np.newaxis]**2 + np.asarray(gaussian_width)**2)
-
-   
+    
+    print('PANNA gamma all rec', gamma_all[0,0])
+    # gamma_all = np.zeros_like(gamma_all)
+    # gamma_all[:] = 1/(np.sqrt(2)*0.42)
+    # print(gamma_all)
     # refine kmax
     gamma_max = np.max(gamma_all)
     err = np.exp(-kmax**2/(4*gamma_max**2))
@@ -269,11 +284,13 @@ def recip_space_term(kmax,
         kmax += 0.1
         err = np.exp(-kmax**2/(4*gamma_max**2))
     kmax *= 1.00001
+    print('PANNA kmaxxx', kmax)
 
     #Hartree energy in kspace
     max_indices = replicas_max_idx(recip_lattice_vectors, kmax)
     l_max, m_max, n_max = max_indices
-   
+    # l_max, m_max, n_max = 2,2,6
+    print('PANNA lmax', l_max, m_max, n_max)
     l_list = range(-l_max, l_max + 1)
     m_list = range(-m_max, m_max + 1)
     n_list = range(-n_max, n_max + 1)
@@ -292,7 +309,7 @@ def recip_space_term(kmax,
 
     k_vects = replicas @ recip_lattice_vectors
     k_norms = np.linalg.norm(k_vects, axis=-1)
-
+    
     # restrict to ball
     idxes_in_ball = k_norms < kmax
     ks_in_ball =  k_vects[idxes_in_ball]
@@ -300,10 +317,10 @@ def recip_space_term(kmax,
 
     # [i, j, n_k]
     #gauss_term = np.zeros((Natoms, Natoms, len(ks_in_ball)))
+    
 
     gauss_term = (np.exp(-(k_norms_in_ball[:, np.newaxis, np.newaxis]**2 / (4.0 * gamma_all**2)))
             /k_norms_in_ball[:, np.newaxis, np.newaxis]**2).T
-
     # [i, j, 3] @ [n_k, 3].T = [i, j, n_k]
     tmp = gauss_term.copy()
     _arg = rij @ ks_in_ball.T
@@ -324,10 +341,17 @@ def recip_space_term(kmax,
         del(force_tmp)
         del(gauss_term)
 
+    # added by Gabri: self energy term
+    # alpha2 = 1/(gaussian_width**2)
+    # E_self = - 2 * np.sqrt(alpha2 / np.pi) * np.eye(Natoms) 
 
     V *= CONV_FACT * (4.* np.pi / volume)
     
+    # gabri! adding the self term
+    # print('PANNA Gabri adding the self term')
+    # V += E_self * CONV_FACT
+        
     if compute_forces:
         forces *= CONV_FACT * (4.* np.pi / volume)
-        return [V, forces, rij, gamma_all]
-    return [V, rij, gamma_all]
+        return [V, forces, rij, gamma_all, k_vects]
+    return [V, rij, gamma_all, k_vects]

@@ -32,19 +32,28 @@ def validate(parameters, data, modapp):
         if task=='val':
             ef = open(Efname, 'w')
             ef.write('#filename n_atoms e_ref e_nn\n')
-            if parameters['forces']:
+            if parameters['forces_cost']>0.0:
                 ff = open(parameters['val_dir']+'/'+outn+'_forces.dat', 'w')
                 ff.write('#filename atom_id fx_nn fy_nn fz_nn fx_ref fy_ref fz_ref\n')
         elif task=='descr':
             descrd = {}
         for d in data:
             batch = {k:d[k].numpy() for k in d.keys() if k!='name'}
+            # if True: # TODO: REMOVE the if 
+            #     preds = modapp(model_state, batch)
+            #     extra = preds[-1]
+            #     rij_norms = extra['rij_norms']
+            #     fij = extra['fij']
+            #     inda = extra['inda']
+            #     indb = extra['indb']
+            #     np.savetxt('abdul.dat', np.vstack((rij_norms, inda, indb, fij.T)).T)
+                
             if task=='val':
                 preds = modapp(model_state, batch)
                 for en,n,nat,er in zip(preds[0],d['name'].numpy(),\
                                        d['nats'].numpy(),d['energy'].numpy()):
                     ef.write('{} {} {:.6f} {:.6f}\n'.format(n.decode('utf-8').replace(" ", "_"),nat,er,en))
-                if parameters['forces']:
+                if parameters['forces_cost']>0.0:
                     i = 0
                     fref = d['forces'].numpy()
                     for n,nat in zip(d['name'].numpy(),d['nats'].numpy()):
@@ -53,6 +62,15 @@ def validate(parameters, data, modapp):
                                      [n.decode('utf-8').replace(" ", "_"),k]+list(preds[1][i+k])+
                                                            list(fref[i+k])])+'\n')
                         i += nat
+                # if parameters['charges_cost']>0.0:
+                #     i = 0
+                #     qref = d['charges'].numpy()
+                #     for n,nat in zip(d['name'].numpy(),d['nats'].numpy()):
+                #         for k in range(nat):
+                #             ff.write(' '.join([str(n) for n in \
+                #                      [n.decode('utf-8').replace(" ", "_"),k]+list(preds[2][i+k])+
+                #                                            list(qref[i+k])])+'\n')
+                #         i += nat
             elif task=='descr':
                 dess = modapp(model_state, batch)
                 # Create lists of configurations (plus padding) and scatter the descriptors
@@ -64,7 +82,7 @@ def validate(parameters, data, modapp):
                     descrd[name.decode('utf-8').replace(" ", "_")] = np.asarray(des)
         if task=='val':
             ef.close()
-            if parameters['forces']:
+            if parameters['forces_cost']>0.0:
                 ff.close()
         elif task=='descr':
             with open(Efname, 'wb') as f:

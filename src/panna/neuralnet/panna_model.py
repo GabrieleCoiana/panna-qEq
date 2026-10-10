@@ -60,7 +60,6 @@ def unpack_data(data,
       - (batch_energies_ref, batch_forces_ref) if forces else (batch_energies_ref, None)
       - batch_of_names if names
     """
-
     
     if input_format=='tfr':
         batch_of_species = data['species']
@@ -337,6 +336,7 @@ class PannaModel(tf.keras.Model):
         max_number_atoms = tf.shape(batch_of_species)[1]
         partitions = tf.cast(tf.reshape(batch_of_species, [-1]), tf.int32)
         array_gvects = tf.reshape(batch_of_gvects, [-1, self.g_size])
+
         atomic_index_partitions = tf.dynamic_partition(
             tf.range(batch_size * max_number_atoms), partitions, self.n_species + 1)
 
@@ -355,7 +355,6 @@ class PannaModel(tf.keras.Model):
             e_empty_list = tf.zeros(0)
             gvect_size = tf.size(species_gvects)
             if self._compute_forces:
-
                 dg_empty_list = tf.zeros((0,self.g_size))
                 s_atomic_energies, s_des_dgs = tf.cond(gvect_size>0,
                                                    lambda: network(species_gvects),
@@ -368,8 +367,8 @@ class PannaModel(tf.keras.Model):
                 des_dgs_partitions.append(s_des_dgs)
             else:
                 s_atomic_energies = tf.cond(gvect_size>0,
-                                                   lambda: network(species_gvects),
-                                                   lambda: e_empty_list)
+                                                    lambda: network(species_gvects),
+                                                    lambda: e_empty_list)
 
             s_atomic_energies = tf.reshape(s_atomic_energies, [-1])
             atomic_energies_partitions.append(s_atomic_energies)
@@ -398,7 +397,6 @@ class PannaModel(tf.keras.Model):
         Return
         ------
         """
-
         if not training:
             # inputs can be (a list, a tuple) or a dict of tensors
             # now rewritten to avoid ragged tensors
@@ -440,7 +438,6 @@ class PannaModel(tf.keras.Model):
 
         atoms_presence = tf.where(batch_of_species<self.n_species,1,0)
         batch_n_atoms = tf.reduce_sum(atoms_presence, axis=1, keepdims=True)
-
         if self._compute_forces:
             batch_of_energies, batch_of_des_dgs = self._compute_pa_energy(
                 batch_of_species, batch_of_gvects, batch_n_atoms)
@@ -451,6 +448,7 @@ class PannaModel(tf.keras.Model):
         else:
             batch_of_energies = self._compute_pa_energy(batch_of_species,
                                                         batch_of_gvects, batch_n_atoms)
+            
         energies_pred = tf.math.reduce_sum(batch_of_energies, axis=1)
 
         if self._compute_forces:
@@ -497,6 +495,7 @@ class PannaModel(tf.keras.Model):
                 e_weight = self._energy_example_weight(batch_n_atoms)
             else:
                 e_weight = None
+
             e_loss = self._e_loss(batch_energies_ref,
                                   energies_pred,
                                   sample_weight=e_weight,

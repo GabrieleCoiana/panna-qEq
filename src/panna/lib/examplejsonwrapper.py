@@ -151,14 +151,6 @@ class ExampleJsonWrapper():
             except IndexError:
                 raise ValueError('forces were requested but are not available')
         return np.asarray(forces)
-    
-    @property
-    def stress(self):
-        """ recover the stress in ev/A^3
-        """
-        stress = np.asarray(self._example['stress']) * energy_to_ev(
-            self.unit_of_energy) / distances_to_angstrom(self.unit_of_length)**3
-        return stress
 
     @property
     def species_indexes(self):
@@ -212,7 +204,31 @@ class ExampleJsonWrapper():
             else:
                 charges.append(0.0)
         return np.asarray(charges, dtype=float)
-
+    
+    @property
+    def atomic_dipoles(self):
+        """ recover the per atom dipoles
+        """
+        
+        dipoles = []
+        for atom in self._example['atoms']:
+            try:
+                dipole = np.asarray(atom[5]).astype(float) * distances_to_angstrom(self.unit_of_length)
+                dipoles.append(dipole)
+            except IndexError:
+                raise ValueError('dipoles were requested but are not available')
+        return np.asarray(dipoles)
+    
+    @property
+    def stress(self):
+        """ recover the stress
+        """
+        stress = np.asarray(self._example['stress']) \
+            * energy_to_ev(self.unit_of_energy) \
+            / distances_to_angstrom(self.unit_of_length)**3
+        return stress
+        
+ 
     @property
     def ev_energy(self):
         """ return the energy in eV"""

@@ -94,24 +94,16 @@ class GvectLATTE(GvectBase):
             raise ValueError('If learnsig, sig should have 2 values (min, max).')
 
         self.spec_weights = gv_param.get('spec_weights', 'specific')
-        self.sp_emb = gv_param.getboolean('neigh_emb', False)
 
         if gv_param.get('sp_emb_file', None):
+            self.sp_emb = True
             self.sp_emb_size = gv_param.getint('sp_emb_size', 0)
-            # Supporting early notation
-            if gv_param.getboolean('center_atom_emb', False):
-                print("Warning: center_atom_emb is a deprecated keyword")
-                print("in the future, please set spec_weights to embedded.")
-                self.spec_weights = 'embedded'
-            if not self.sp_emb:
-                print("Warning: embedding file present, but neigh_emb is False")
-                print("currently, this does not enable neighbors embedding.")
+            self.center_emb = gv_param.getboolean('center_atom_emb', False)
+            if self.center_emb and self.spec_weights=='specific':
+                raise ValueError('Center atom embedding requires common weights.')
         else:
-            if self.sp_emb:
-                raise ValueError('neigh_emb True requires an embedding file.')
-            if self.spec_weights=='embedded':
-                raise ValueError('spec_weights embedded requires an embedding file.')
-            # self.center_emb = False
+            self.sp_emb = False
+            self.center_emb = False
 
         self.pre = gv_param.get_comma_list_floats('pref', np.ones(len(RsNs)))
 
@@ -159,13 +151,10 @@ class GvectLATTE(GvectBase):
                     var_dat.append({'type': 'unif', 'min':sig[0], 'max':sig[1], 'shape':[nsp,n*sh[0]],'name': 'sig_'+sh[2]})
         elif self.spec_weights=='common':
             for n, sh in zip(RsNs,self.dshape):
-                var_dat.append({'type': 'norm', 'mean':0.0, 'std':1.0,'shape':[emb,n*sh[0]],'name': 'spw_'+sh[2]})
-                var_dat.append({'type': 'unif', 'min':sig[0], 'max':Rc-sig[0], 'shape':[n*sh[0]],'name': 'cent_'+sh[2]})
-                if self.learnsig:
-                    var_dat.append({'type': 'unif', 'min':sig[0], 'max':sig[1], 'shape':[n*sh[0]],'name': 'sig_'+sh[2]})
-        elif self.spec_weights=='embedded':
-            for n, sh in zip(RsNs,self.dshape):
-                var_dat.append({'type': 'norm', 'mean':0.0, 'std':1.0,'shape':[2,emb,n*sh[0]],'name': 'spw_'+sh[2]})
+                if self.center_emb:
+                    var_dat.append({'type': 'norm', 'mean':0.0, 'std':1.0,'shape':[2,emb,n*sh[0]],'name': 'spw_'+sh[2]})
+                else:
+                    var_dat.append({'type': 'norm', 'mean':0.0, 'std':1.0,'shape':[emb,n*sh[0]],'name': 'spw_'+sh[2]})
                 var_dat.append({'type': 'unif', 'min':sig[0], 'max':Rc-sig[0], 'shape':[n*sh[0]],'name': 'cent_'+sh[2]})
                 if self.learnsig:
                     var_dat.append({'type': 'unif', 'min':sig[0], 'max':sig[1], 'shape':[n*sh[0]],'name': 'sig_'+sh[2]})
@@ -214,16 +203,12 @@ class GvectLATTE(GvectBase):
                     sig = sig_W[sp_a]
             elif self.spec_weights=='common':
                 if self.sp_emb:
-                    sp_cont = self.pre[i]*(weights[-1][sp_b]@weights[varnum*i])
-                else:
-                    sp_cont = self.pre[i]*weights[varnum*i][sp_b]
-                spcent = weights[varnum*i+1]
-                if self.learnsig:
-                    sig = weights[varnum*i+2]
-            elif self.spec_weights=='embedded':
-                if self.sp_emb:
-                    emb_pad = jnp.concatenate([weights[-1],jnp.zeros((1,self.sp_emb_size))],axis=0)
-                    sp_cont = self.pre[i]*(emb_pad[sp_a]@weights[varnum*i][0])*(emb_pad[sp_b]@weights[varnum*i][1])
+                    if self.center_emb:
+                        emb_pad = jnp.concatenate([weights[-1],jnp.zeros((1,self.sp_emb_size))],axis=0)
+                        # sp_cont = self.pre[i]*(emb_pad[sp_a]@(emb_pad[sp_b]@weights[varnum*i]))
+                        sp_cont = self.pre[i]*(emb_pad[sp_a]@weights[varnum*i][0])*(emb_pad[sp_b]@weights[varnum*i][1])
+                    else:
+                        sp_cont = self.pre[i]*(weights[-1][sp_b]@weights[varnum*i])
                 else:
                     sp_cont = self.pre[i]*weights[varnum*i][sp_b]
                 spcent = weights[varnum*i+1]

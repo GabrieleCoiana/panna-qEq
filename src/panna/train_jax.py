@@ -1,5 +1,6 @@
 import os
 os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
+# os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 import time
 import argparse
 import logging
@@ -21,11 +22,12 @@ logger = logging.getLogger('panna')
 from panna.lib.log import emit_splash_screen
 
 from panna.jax.parser_jax import trainjax_parameter_parser
-from panna.jax.data_jax import create_dataset
+from panna.jax.data_jax import create_dataset_new
 from panna.jax.model_jax import make_model
 from panna.jax.val_jax import validate
 from panna.jax.losses_jax import compute_loss, compute_diffsums
-from panna.jax.metrics_jax import metrics
+from panna.jax.metrics_jax import metrics#, metrics_LR
+# from panna.electrostatics.Electrostatics_jax_qq import create_masks, set_ewald_parameters_for_batch
 
 def train_step(parameters, modapp, tx, make_loss, model_state, opt_state, batch):
     fixed_vars = {}
@@ -40,7 +42,7 @@ def train_step(parameters, modapp, tx, make_loss, model_state, opt_state, batch)
                 if v in opt_state[0][2]:
                     opt_state[0][2].pop(v)
     (loss, fom), grads = make_loss(model_state, fixed_vars, batch)
-
+    
     # Adamw also wants the state passed...
     if parameters['l1_coef'] > 0.0:
         updates, opt_state = tx.update(grads, opt_state, model_state)
@@ -51,6 +53,7 @@ def train_step(parameters, modapp, tx, make_loss, model_state, opt_state, batch)
     # Reintroducing fixed variables
     for v in parameters['fixed_variables']:
         model_state[v] = fixed_vars[v]
+
     # Clipping parameters that need it
     if 'clipping_vars' in parameters.keys() and len(parameters['clipping_vars'])>0:
         for cd in parameters['clipping_vars']:
@@ -77,6 +80,7 @@ def init_train(parameters, model, grad_loss, batch):
     e = 0
     s = 0
     opt_state = None
+
     # Parsing possible restart 
     if parameters['load_weights']:
         # If the model is specified
@@ -136,7 +140,6 @@ def init_train(parameters, model, grad_loss, batch):
         model_state = model.init(rngkey, batch)
     else:
         _ = model.init(0, batch)
-
     # Parsing loss schedule
     sch_list = []
     sch_bounds = []
@@ -175,11 +178,12 @@ def init_train(parameters, model, grad_loss, batch):
         opt_state = tx.init(model_state)
         for v in parameters['fixed_variables']:
             model_state[v] = fixed_vars[v]
-
+    
     # Creating optimized training function
-    train_func = jax.jit(partial(train_step, parameters, model.apply, tx, grad_loss))
+    train_func = jax.jit(partial(train_step, parameters, model.apply, tx, grad_loss)) 
     
     return train_func, model_state, tx, opt_state, e, s
+
 
 def main(shell=True, argstr=None):
     parser = argparse.ArgumentParser()
@@ -195,14 +199,13 @@ def main(shell=True, argstr=None):
         flags, _unparsed = parser.parse_known_args()
     else:
         flags, _unparsed = parser.parse_known_args([argstr])
-    
+        
     emit_splash_screen(logger)
     # Parsing config file
     parameters = trainjax_parameter_parser(flags.config)
-    train_f = parameters['forces']
 
     # Creating dataset
-    data, Vdata, pre = create_dataset(parameters)
+    data, Vdata, pre = create_dataset_new(parameters)
 
     # Creating model
     raw_model = make_model(parameters, pre=pre)
@@ -227,11 +230,18 @@ def main(shell=True, argstr=None):
     tt = time.time()
     pt = tt-2
     et = time.time()
-
+    
+    
+    cc, model_state = 0 , None   
     # Main loop
     for d in data:
         # Get a training batch
         batch = {k:d[k].numpy() for k in d.keys() if k!='name'}
+        
+        # break
+        
+        
+
         # Init model at step 0 with the first batch
         if s==0:
             train_func, model_state, tx, opt_state, e, s = \
@@ -244,7 +254,12 @@ def main(shell=True, argstr=None):
             print('Runtime error: '+str(re)[:300]+'... Probably out of memory.')
             print('Skipping this batch. If the error persists reduce parameters.')
             continue
+        
+        
+        
+        
 
+        
         ttt = time.time()
         dt = ttt-tt
         # Updating command line figures of merit
@@ -261,7 +276,7 @@ def main(shell=True, argstr=None):
             pt = ttt
             ETA = adt*(parameters['epoch_size']-s%parameters['epoch_size'])
             ETAs = time.strftime("%H:%M:%S", time.gmtime(int(ETA)))
-            print('Epoch: ', e+1, 'step: ', s, 'dt: {:.3f}'.format(adt*1000), 'ms ETA: ', ETAs,' loss: ', aloss, end=' ')
+            print('\nEpoch: ', e+1, 'step: ', s, 'dt: {:.3f}'.format(adt*1000), 'ms ETA: ', ETAs,' loss: ', aloss, end=' ')
             print(met.train_string(), end='\r', flush=True)
         tt = ttt
         s += 1
@@ -272,22 +287,23 @@ def main(shell=True, argstr=None):
             etime = int(ttt - et)
             etime = time.strftime("%H:%M:%S", time.gmtime(etime))
             et = ttt
-            print('Epoch: ', e+1, 'step: ', s, 'dt: {:.3f}'.format(adt*1000), 'ms Epoch time: ', etime,' loss: ', aloss, end=' ')
-            print(met.train_string(), end='\n', flush=True)
+            print('\nEpoch: ', e+1, 'step: ', s, 'dt: {:.3f}'.format(adt*1000), 'ms Epoch time: ', etime,' loss: ', aloss, end=' ')
+            print(met.train_string(), end='\n\n', flush=True)
             e +=1
 
             # Saving the model
             if e%parameters['save_epoch_freq']==0:
                 with open(parameters['train_dir']+
-                     '/models/epoch_{}_step_{}.pkl'.format(e,s), 'wb') as f:
+                      '/models/epoch_{}_step_{}.pkl'.format(e,s), 'wb') as f:
                     pickle.dump(model_state, f)
                 # Save optimizer state
                 with open(parameters['train_dir']+
-                     '/models/opt_state.pkl', 'wb') as f:
+                      '/models/opt_state.pkl', 'wb') as f:
                     pickle.dump(opt_state, f)
 
             # Validation on the whole val dataset
             if Vdata:
+                # vparameters = parameters.copy()
                 # Running over batches and accumulating sums for proper average
                 for dat in Vdata:
                     vbatch = {k:dat[k].numpy() for k in dat.keys() if k!='name'}
@@ -295,6 +311,7 @@ def main(shell=True, argstr=None):
                     met.update_val(vfom)
                 vstr, vout = met.finalize_val()
                 print('         '+vstr, flush=True)
+                
 
             # Saving foms to file
             outq = [e,s]

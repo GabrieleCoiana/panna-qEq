@@ -106,6 +106,10 @@ def _main(conf_file):
         except:
             pass
         with open(output_file, 'w') as f:
+            # print(output_file)
+            # for key in ASEconfig['DEFAULT_NETWORK']:
+            #     print(key, type(key))
+            # print(ASEconfig.sections())
             ASEconfig.write(f)
         if not os.path.isdir(out_dir):
             os.mkdir(out_dir)
@@ -121,6 +125,7 @@ def _main(conf_file):
     parameters.set('IO_INFORMATION', 'restart_mode', 'no')
     model_params, compile_params, fit_params, validation_params = \
         parse_config(parameters)    
+        
 
     if long_range_el:
         panna_model = create_panna_model_with_electrostatics(model_params)
@@ -134,29 +139,37 @@ def _main(conf_file):
                        [np.zeros((1,1))+1e-6, np.zeros(1), np.zeros((1,1,3))]]
     else:
         dummy_input = [np.zeros((1,1),dtype=np.int32),np.zeros((1,1,gsize))]
+
     _ = panna_model(dummy_input)
+    return panna_model
     
-    if not os.path.isdir(out_dir):
-        os.mkdir(out_dir)
+    # if not os.path.isdir(out_dir):
+    #     os.mkdir(out_dir)
 
-    if output_type == 'LAMMPS':
-        panna_model.dump_network_lammps(out_dir, output_file, **extra_data)
-    elif output_type == 'PANNA':
-        panna_model.dump_network_panna(out_dir, output_file, **extra_data)
-    else:
-        raise ValueError('Unknown dump type')
+    # if output_type == 'LAMMPS':
+    #     panna_model.dump_network_lammps(out_dir, output_file, **extra_data)
+    # elif output_type == 'PANNA':
+    #     panna_model.dump_network_panna(out_dir, output_file, **extra_data)
+    # else:
+    #     raise ValueError('Unknown dump type')
 
-def main():
+def main(shell=True, argstr=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config', type=str, help='config file', required=True)
     parser.add_argument('--debug',
                         action='store_true',
                         help='debug flag',
                         required=False)
-    args = parser.parse_args()
+    # added by Gabri. Was: only if statement
+    if shell:
+        args = parser.parse_args()
+    else:
+        args = parser.parse_args([argstr])
+
     emit_splash_screen(logger)
 
-    _main(args.config)
+    model = _main(args.config)
+    return model
 
 
 if __name__ == '__main__':

@@ -107,14 +107,18 @@ def tfr_packer_writer(files, packer, out_path, prefix=None):
         tfr_writer(filename=filename, path=out_path, data=payload)
 
 
-def main():
+def main(shell=True, argstr=None):
     parser = argparse.ArgumentParser(description='TFR packer')
     parser.add_argument('-c',
                         '--config',
                         type=str,
                         help='config file',
                         required=True)
-    args = parser.parse_args()
+    # modified by Gabri. Was: only whats inside if statement
+    if shell:
+        args = parser.parse_args()
+    else:
+        args = parser.parse_args([argstr])
     config = configparser.ConfigParser()
     config.read(args.config)
     init_logging()

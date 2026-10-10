@@ -122,20 +122,23 @@ class PannaModel_with_electrostatics(PannaModel):
             network = self[species_symbol]
             # get the appropriate gvectors
             species_gvects = tf.gather(array_gvects, atomic_index_partitions[species_idx])
-            
+
             e_empty_list = [tf.zeros(0) for i in range(3)]
             gvect_size = tf.size(species_gvects)
             if self._compute_forces:
 
                 dg_empty_list = [tf.zeros((0,self.g_size)) for i in range(3)]
+                
+                # # Gabri changed this
+                # s_atomic_energies, s_des_dgs = network(species_gvects)
 
                 s_atomic_energies, s_des_dgs = tf.cond(gvect_size>0,
-                                                   lambda: network(species_gvects),
-                                                   lambda: (e_empty_list, dg_empty_list))
+                                                    lambda: network(species_gvects),
+                                                    lambda: (e_empty_list, dg_empty_list))
 
-                # s_des_dgs shape = (3, None, 1, g_size)
-                # None: n of atoms for the given species in the current batch
-                # reshape each to [-1, g_size] to kill the extra [1] dimension
+                # # s_des_dgs shape = (3, None, 1, g_size)
+                # # None: n of atoms for the given species in the current batch
+                # # reshape each to [-1, g_size] to kill the extra [1] dimension
                 
                 for k in range(SR_order+1):
                     s_des_dgs_k = tf.reshape(s_des_dgs[k], [-1, self.g_size])
@@ -409,7 +412,7 @@ class PannaModel_with_electrostatics(PannaModel):
         Return
         ------
         """
-
+        print('CAAAAAALL')
         if not training:
             # inputs can be (a list, a tuple) or a dict of tensors
             # now rewritten to avoid ragged tensors
@@ -570,6 +573,7 @@ class PannaModel_with_electrostatics(PannaModel):
 
         batch_energies_ref, batch_forces_ref = data[2]
         batch_charge_ref = data[3]
+        
 
 
         with tf.GradientTape() as tape:

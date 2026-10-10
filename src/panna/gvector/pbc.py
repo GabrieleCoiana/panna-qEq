@@ -176,3 +176,144 @@ def make_replicas(positions, lattice_vectors, Rc, pbc=[True, True, True]):
             keep_replicas.append(r)
 
     return positions, np.asarray(keep_replicas)
+
+
+
+# def get_Rij(R0, latvec, nrep=3):
+#     """
+#     returns the R matrix
+#     """
+#     # N1N2N3 = N1 * N2 * N3
+#     N = len(R0)
+#     Scells = get_Scells(latvec, R0, nrep=nrep)
+#     # print(Scells)
+    
+    
+#     Rij = np.zeros((N,N))
+#     xyzij = np.zeros((3,N,N))
+#     for i in range(N):
+#         atom_origin = R0[i]
+
+#         for j in range(N):
+#             dist_Scells_vec = Scells[:,j,:] - atom_origin
+#             dist_Scells = np.linalg.norm(dist_Scells_vec, axis=1)
+#             found_min_dist = np.argwhere(dist_Scells == np.min(dist_Scells, axis=0))
+#             found_min_dist_0 = found_min_dist[0,0]
+#             nearest_neigh = Scells[found_min_dist_0,j,:]
+
+#             Rij[i,j] = np.linalg.norm(nearest_neigh - atom_origin)
+#             xyzij[:,i,j] = nearest_neigh - atom_origin
+            
+            
+#     return Rij, xyzij
+
+
+
+def get_el_kernels(R0, latvec, cutoff, alpha, error_func):
+    N = len(R0)
+    Lmax = np.max(np.linalg.norm(latvec, axis=1)) #lattice vectors must be read horizontally
+    max_rep_right = int( (Lmax + cutoff) // Lmax ) # maximum amount of cell replicas on the right
+    max_rep = 2*max_rep_right+1
+    Scells = get_Scells(latvec, R0, nrep=max_rep)
+    
+    energy_kernel = np.zeros((N,N))
+    force_kernel = np.zeros((3,N,N))
+    for i in range(N):
+        ref_atm = np.expand_dims( R0[i], 0)
+        for j in range(i+1):  
+            
+            dist_Scells_vec = Scells[:,j,:] - ref_atm
+            dist_Scells = np.linalg.norm(dist_Scells_vec, axis=-1)
+            
+            condition = np.logical_and(dist_Scells < cutoff, dist_Scells > 1e-9)
+            found_min_dist = np.argwhere(condition).flatten()
+            # found_min_dist = np.argwhere(dist_Scells == dist_Scells.min()).flatten()[0]
+            
+
+            nearest_neigh = Scells[found_min_dist,j,:]
+            neighbours_vecs = ref_atm - nearest_neigh 
+            neighbours_dist = np.linalg.norm(neighbours_vecs, axis=1)
+            
+            
+            erfc_over_rij  = error_func(alpha*neighbours_dist)/neighbours_dist
+            erfc_over_rij3 = error_func(alpha*neighbours_dist)/neighbours_dist**3 
+            gauss_term_ij = 2*alpha / np.sqrt(np.pi) * np.exp(-alpha**2*neighbours_dist**2) /neighbours_dist**2
+            
+            
+            # sum_inverse_neighbours_dist = np.sum(1/neighbours_dist)
+            # sum_erfcij = np.sum(erfcij)
+            # sum_gauss_term_ij = np.sum(gauss_term_ij)
+            
+            force_ij = -(erfc_over_rij3+gauss_term_ij) @ neighbours_vecs
+            e_ij = np.sum(erfc_over_rij)
+            # avg_neighbours_vec = np.sum(neighbours_vecs/np.expand_dims(neighbours_dist,1), axis=0)
+            
+            # xyzij[:,i,j] = avg_neighbours_vec 
+            # rij_inv[i,j] = sum_inverse_neighbours_dist
+            # erf_matrix[i,j] = sum_erfcij
+            # gauss_matrix[i,j] = sum_gauss_term_ij
+            
+            force_kernel[:,i,j] = force_ij 
+            energy_kernel[i,j] = e_ij
+
+    for i in range(3):
+        diag = force_kernel[i].diagonal()      
+        force_kernel[i] = force_kernel[i] - force_kernel[i].T
+        np.fill_diagonal(force_kernel[i], diag)
+
+
+    diag = energy_kernel.diagonal()
+    energy_kernel = energy_kernel + energy_kernel.T
+    np.fill_diagonal(energy_kernel, diag)
+
+    return energy_kernel, force_kernel
+
+
+
+def get_Rij_old(R0, latvec, nrep=3):
+    """
+    returns the R matrix
+    """
+    N = len(R0)
+    Scells = get_Scells(latvec, R0, nrep=nrep)
+    
+    
+    Rij = np.zeros((N,N))
+    xyzij = np.zeros((3,N,N))
+    for i in range(N):
+        atom_origin = R0[i]
+
+        for j in range(i):
+            # print(i,j)
+            dist_Scells_vec = Scells[:,j,:] - atom_origin
+            dist_Scells = np.linalg.norm(dist_Scells_vec, axis=1)
+            found_min_dist = np.argwhere(dist_Scells == np.min(dist_Scells, axis=0))
+            found_min_dist_0 = found_min_dist[0,0]
+            nearest_neigh = Scells[found_min_dist_0,j,:]
+            
+            
+            Rij[i,j] = np.linalg.norm(nearest_neigh - atom_origin)
+            xyzij[:,i,j] = nearest_neigh - atom_origin
+            
+    Rij = Rij + Rij.T
+    xyzij[0] = xyzij[0] - xyzij[0].T
+    xyzij[1] = xyzij[1] - xyzij[1].T
+    xyzij[2] = xyzij[2] - xyzij[2].T
+
+    return Rij, xyzij
+
+
+
+
+def get_Scells(H, R0, nrep=3):
+    N = len(R0)
+    xl = nrep // 2 
+    x1 = np.arange(-xl,-xl+nrep, dtype=int)
+    comb = np.array(np.meshgrid(x1,x1,x1)).T.reshape(-1,3)
+    displ = np.dot(H, comb.T).T
+    
+    Scells = np.zeros((nrep**3, N, 3))
+    for c in range(nrep**3):
+        Scells[c] = R0 + displ[c]     
+    return Scells
+
